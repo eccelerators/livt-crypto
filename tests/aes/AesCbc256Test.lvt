@@ -1,0 +1,206 @@
+namespace Livt.Crypto.Tests.Aes
+using Livt.Crypto.Aes
+
+
+
+@Test
+component AesCbc256Test
+{
+    cbc: Cbc256
+
+    new()
+    {
+        this.cbc = new Cbc256()
+    }
+
+    // -----------------------------------------------------------------------
+    // Common test data (NIST SP 800-38A Appendix F.2.5 / F.2.6, AES-256 CBC)
+    // Key:    603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4
+    // IV:     000102030405060708090a0b0c0d0e0f
+    // PT[1]:  6bc1bee22e409f96e93d7e117393172a  CT[1]: f58c4c04d6e5f1ba779eabfb5f7bfbd6
+    // PT[2]:  ae2d8a571e03ac9c9eb76fac45af8e51  CT[2]: 9cfc4e967edb808d679f777bc6702c7d
+    // -----------------------------------------------------------------------
+
+    // NIST SP 800-38A F.2.5 CBC-AES256 Encrypt — Block 1.
+    @Test
+    fn TestNistSp80038AEncryptBlock1()
+    {
+        var key: byte[32] = [
+            0x60, 0x3d, 0xeb, 0x10, 0x15, 0xca, 0x71, 0xbe,
+            0x2b, 0x73, 0xae, 0xf0, 0x85, 0x7d, 0x77, 0x81,
+            0x1f, 0x35, 0x2c, 0x07, 0x3b, 0x61, 0x08, 0xd7,
+            0x2d, 0x98, 0x10, 0xa3, 0x09, 0x14, 0xdf, 0xf4]
+
+        var iv: byte[16] = [
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+            0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f]
+
+        var pt: byte[16] = [
+            0x6b, 0xc1, 0xbe, 0xe2, 0x2e, 0x40, 0x9f, 0x96,
+            0xe9, 0x3d, 0x7e, 0x11, 0x73, 0x93, 0x17, 0x2a]
+
+        this.cbc.SetKey(key)
+        this.cbc.SetIV(iv)
+        this.cbc.LoadBlock(pt)
+        this.cbc.EncryptBlock()
+
+        var ct: byte[16] = this.cbc.GetBlock()
+        assert ct[0]  == 0xf5
+        assert ct[1]  == 0x8c
+        assert ct[2]  == 0x4c
+        assert ct[3]  == 0x04
+        assert ct[4]  == 0xd6
+        assert ct[5]  == 0xe5
+        assert ct[6]  == 0xf1
+        assert ct[7]  == 0xba
+        assert ct[8]  == 0x77
+        assert ct[9]  == 0x9e
+        assert ct[10] == 0xab
+        assert ct[11] == 0xfb
+        assert ct[12] == 0x5f
+        assert ct[13] == 0x7b
+        assert ct[14] == 0xfb
+        assert ct[15] == 0xd6
+    }
+
+    // NIST SP 800-38A F.2.5 CBC-AES256 Encrypt — Blocks 1 and 2 (tests IV chaining).
+    @Test
+    fn TestNistSp80038AEncryptBlock2()
+    {
+        var key: byte[32] = [
+            0x60, 0x3d, 0xeb, 0x10, 0x15, 0xca, 0x71, 0xbe,
+            0x2b, 0x73, 0xae, 0xf0, 0x85, 0x7d, 0x77, 0x81,
+            0x1f, 0x35, 0x2c, 0x07, 0x3b, 0x61, 0x08, 0xd7,
+            0x2d, 0x98, 0x10, 0xa3, 0x09, 0x14, 0xdf, 0xf4]
+
+        var iv: byte[16] = [
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+            0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f]
+
+        var pt1: byte[16] = [
+            0x6b, 0xc1, 0xbe, 0xe2, 0x2e, 0x40, 0x9f, 0x96,
+            0xe9, 0x3d, 0x7e, 0x11, 0x73, 0x93, 0x17, 0x2a]
+
+        var pt2: byte[16] = [
+            0xae, 0x2d, 0x8a, 0x57, 0x1e, 0x03, 0xac, 0x9c,
+            0x9e, 0xb7, 0x6f, 0xac, 0x45, 0xaf, 0x8e, 0x51]
+
+        this.cbc.SetKey(key)
+        this.cbc.SetIV(iv)
+
+        this.cbc.LoadBlock(pt1)
+        this.cbc.EncryptBlock()
+
+        this.cbc.LoadBlock(pt2)
+        this.cbc.EncryptBlock()
+
+        var ct2: byte[16] = this.cbc.GetBlock()
+        assert ct2[0]  == 0x9c
+        assert ct2[1]  == 0xfc
+        assert ct2[2]  == 0x4e
+        assert ct2[3]  == 0x96
+        assert ct2[4]  == 0x7e
+        assert ct2[5]  == 0xdb
+        assert ct2[6]  == 0x80
+        assert ct2[7]  == 0x8d
+        assert ct2[8]  == 0x67
+        assert ct2[9]  == 0x9f
+        assert ct2[10] == 0x77
+        assert ct2[11] == 0x7b
+        assert ct2[12] == 0xc6
+        assert ct2[13] == 0x70
+        assert ct2[14] == 0x2c
+        assert ct2[15] == 0x7d
+    }
+
+    // NIST SP 800-38A F.2.6 CBC-AES256 Decrypt — Block 1.
+    @Test
+    fn TestNistSp80038ADecryptBlock1()
+    {
+        var key: byte[32] = [
+            0x60, 0x3d, 0xeb, 0x10, 0x15, 0xca, 0x71, 0xbe,
+            0x2b, 0x73, 0xae, 0xf0, 0x85, 0x7d, 0x77, 0x81,
+            0x1f, 0x35, 0x2c, 0x07, 0x3b, 0x61, 0x08, 0xd7,
+            0x2d, 0x98, 0x10, 0xa3, 0x09, 0x14, 0xdf, 0xf4]
+
+        var iv: byte[16] = [
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+            0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f]
+
+        var ct: byte[16] = [
+            0xf5, 0x8c, 0x4c, 0x04, 0xd6, 0xe5, 0xf1, 0xba,
+            0x77, 0x9e, 0xab, 0xfb, 0x5f, 0x7b, 0xfb, 0xd6]
+
+        this.cbc.SetKey(key)
+        this.cbc.SetIV(iv)
+        this.cbc.LoadBlock(ct)
+        this.cbc.DecryptBlock()
+
+        var pt: byte[16] = this.cbc.GetBlock()
+        assert pt[0]  == 0x6b
+        assert pt[1]  == 0xc1
+        assert pt[2]  == 0xbe
+        assert pt[3]  == 0xe2
+        assert pt[4]  == 0x2e
+        assert pt[5]  == 0x40
+        assert pt[6]  == 0x9f
+        assert pt[7]  == 0x96
+        assert pt[8]  == 0xe9
+        assert pt[9]  == 0x3d
+        assert pt[10] == 0x7e
+        assert pt[11] == 0x11
+        assert pt[12] == 0x73
+        assert pt[13] == 0x93
+        assert pt[14] == 0x17
+        assert pt[15] == 0x2a
+    }
+
+    // Encrypt then decrypt — must recover the original plaintext.
+    @Test
+    fn TestEncryptDecryptRoundtrip()
+    {
+        var key: byte[32] = [
+            0x60, 0x3d, 0xeb, 0x10, 0x15, 0xca, 0x71, 0xbe,
+            0x2b, 0x73, 0xae, 0xf0, 0x85, 0x7d, 0x77, 0x81,
+            0x1f, 0x35, 0x2c, 0x07, 0x3b, 0x61, 0x08, 0xd7,
+            0x2d, 0x98, 0x10, 0xa3, 0x09, 0x14, 0xdf, 0xf4]
+
+        var iv: byte[16] = [
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+            0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f]
+
+        var pt: byte[16] = [
+            0x6b, 0xc1, 0xbe, 0xe2, 0x2e, 0x40, 0x9f, 0x96,
+            0xe9, 0x3d, 0x7e, 0x11, 0x73, 0x93, 0x17, 0x2a]
+
+        // Encrypt.
+        this.cbc.SetKey(key)
+        this.cbc.SetIV(iv)
+        this.cbc.LoadBlock(pt)
+        this.cbc.EncryptBlock()
+        var ct: byte[16] = this.cbc.GetBlock()
+
+        // Decrypt (same key, reset IV).
+        this.cbc.SetIV(iv)
+        this.cbc.LoadBlock(ct)
+        this.cbc.DecryptBlock()
+
+        var recovered: byte[16] = this.cbc.GetBlock()
+        assert recovered[0]  == 0x6b
+        assert recovered[1]  == 0xc1
+        assert recovered[2]  == 0xbe
+        assert recovered[3]  == 0xe2
+        assert recovered[4]  == 0x2e
+        assert recovered[5]  == 0x40
+        assert recovered[6]  == 0x9f
+        assert recovered[7]  == 0x96
+        assert recovered[8]  == 0xe9
+        assert recovered[9]  == 0x3d
+        assert recovered[10] == 0x7e
+        assert recovered[11] == 0x11
+        assert recovered[12] == 0x73
+        assert recovered[13] == 0x93
+        assert recovered[14] == 0x17
+        assert recovered[15] == 0x2a
+    }
+}

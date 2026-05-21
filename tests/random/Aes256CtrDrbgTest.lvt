@@ -1,0 +1,131 @@
+namespace Livt.Crypto.Tests.Random
+using Livt.Crypto.Random
+
+
+
+@Test
+component Aes256CtrDrbgTest
+{
+    drbg: Aes256CtrDrbg
+
+    new()
+    {
+        this.drbg = new Aes256CtrDrbg()
+    }
+
+    // -----------------------------------------------------------------------
+    // Common test data (NIST SP 800-90A CTR_DRBG, AES-256 no DF, no PR)
+    //
+    // TC1 — all-zero entropy (48 bytes), ReturnedBits from the second
+    // Generate request (64 bytes):
+    //     b9574a8e748c7a218b4ad21871af8417a79d1c6f0c35ad4096b83e3d77dbf893
+    //     49e7e0d01cec1c031029686a7dda9aef35a5adf4f1d4621931473b369d30bb1c
+    // -----------------------------------------------------------------------
+
+    // Full NIST SP 800-90A KAT: all-zero entropy, two Generate requests,
+    // verify all 64 bytes of the returned bits from the second request.
+    @Test
+    fn TestNistKat()
+    {
+        var entropy: byte[48] = [
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+
+        this.drbg.Instantiate(entropy)
+
+        // Generate request 1: 4 blocks = 64 bytes (output discarded).
+        this.drbg.GenerateBlock()
+        this.drbg.GenerateBlock()
+        this.drbg.GenerateBlock()
+        this.drbg.GenerateBlock()
+        this.drbg.FinalizeGenerate()
+
+        // Generate request 2: 4 blocks = 64 bytes (these are the ReturnedBits).
+        this.drbg.GenerateBlock()
+        var rb0: byte[16] = this.drbg.GetBlock()
+        this.drbg.GenerateBlock()
+        var rb1: byte[16] = this.drbg.GetBlock()
+        this.drbg.GenerateBlock()
+        var rb2: byte[16] = this.drbg.GetBlock()
+        this.drbg.GenerateBlock()
+        var rb3: byte[16] = this.drbg.GetBlock()
+        this.drbg.FinalizeGenerate()
+
+        // Expected ReturnedBits (64 bytes):
+        //   b9574a8e748c7a218b4ad21871af8417
+        assert rb0[0]  == 0xb9
+        assert rb0[1]  == 0x57
+        assert rb0[2]  == 0x4a
+        assert rb0[3]  == 0x8e
+        assert rb0[4]  == 0x74
+        assert rb0[5]  == 0x8c
+        assert rb0[6]  == 0x7a
+        assert rb0[7]  == 0x21
+        assert rb0[8]  == 0x8b
+        assert rb0[9]  == 0x4a
+        assert rb0[10] == 0xd2
+        assert rb0[11] == 0x18
+        assert rb0[12] == 0x71
+        assert rb0[13] == 0xaf
+        assert rb0[14] == 0x84
+        assert rb0[15] == 0x17
+
+        //   a79d1c6f0c35ad4096b83e3d77dbf893
+        assert rb1[0]  == 0xa7
+        assert rb1[1]  == 0x9d
+        assert rb1[2]  == 0x1c
+        assert rb1[3]  == 0x6f
+        assert rb1[4]  == 0x0c
+        assert rb1[5]  == 0x35
+        assert rb1[6]  == 0xad
+        assert rb1[7]  == 0x40
+        assert rb1[8]  == 0x96
+        assert rb1[9]  == 0xb8
+        assert rb1[10] == 0x3e
+        assert rb1[11] == 0x3d
+        assert rb1[12] == 0x77
+        assert rb1[13] == 0xdb
+        assert rb1[14] == 0xf8
+        assert rb1[15] == 0x93
+
+        //   49e7e0d01cec1c031029686a7dda9aef
+        assert rb2[0]  == 0x49
+        assert rb2[1]  == 0xe7
+        assert rb2[2]  == 0xe0
+        assert rb2[3]  == 0xd0
+        assert rb2[4]  == 0x1c
+        assert rb2[5]  == 0xec
+        assert rb2[6]  == 0x1c
+        assert rb2[7]  == 0x03
+        assert rb2[8]  == 0x10
+        assert rb2[9]  == 0x29
+        assert rb2[10] == 0x68
+        assert rb2[11] == 0x6a
+        assert rb2[12] == 0x7d
+        assert rb2[13] == 0xda
+        assert rb2[14] == 0x9a
+        assert rb2[15] == 0xef
+
+        //   35a5adf4f1d4621931473b369d30bb1c
+        assert rb3[0]  == 0x35
+        assert rb3[1]  == 0xa5
+        assert rb3[2]  == 0xad
+        assert rb3[3]  == 0xf4
+        assert rb3[4]  == 0xf1
+        assert rb3[5]  == 0xd4
+        assert rb3[6]  == 0x62
+        assert rb3[7]  == 0x19
+        assert rb3[8]  == 0x31
+        assert rb3[9]  == 0x47
+        assert rb3[10] == 0x3b
+        assert rb3[11] == 0x36
+        assert rb3[12] == 0x9d
+        assert rb3[13] == 0x30
+        assert rb3[14] == 0xbb
+        assert rb3[15] == 0x1c
+    }
+}

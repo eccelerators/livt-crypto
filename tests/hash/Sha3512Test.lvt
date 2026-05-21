@@ -1,0 +1,174 @@
+namespace Livt.Crypto.Tests.Hash
+using Livt.Crypto.Hash
+
+
+
+// Tests for Sha3512 (NIST FIPS 202).
+@Test component Sha3512Test
+{
+    sha: Sha3512
+
+    new()
+    {
+        this.sha = new Sha3512()
+    }
+
+    // NIST FIPS 202 test vector: SHA3-512("") (empty message).
+    // Expected:
+    //   a6 9f 73 cc  a2 3a 9a c5  c8 b5 67 dc  18 5a 75 6e
+    //   97 c9 82 16  4f e2 58 59  e0 d1 dc c1  47 5c 80 a6
+    //   15 b2 12 3a  f1 f5 f9 4c  11 e3 e9 40  2c 3a c5 58
+    //   f5 00 19 9d  95 b6 d3 e3  01 75 85 86  28 1d cd 26
+    @Test fn TestEmptyMessage()
+    {
+        this.sha.Reset()
+        var emptyBlock: byte[72]
+        this.sha.Finalize(emptyBlock, 0)
+        var digest: byte[64] = this.sha.GetDigest()
+        assert digest[0]  == 0xa6
+        assert digest[1]  == 0x9f
+        assert digest[2]  == 0x73
+        assert digest[3]  == 0xcc
+        assert digest[4]  == 0xa2
+        assert digest[5]  == 0x3a
+        assert digest[6]  == 0x9a
+        assert digest[7]  == 0xc5
+        assert digest[8]  == 0xc8
+        assert digest[9]  == 0xb5
+        assert digest[10] == 0x67
+        assert digest[11] == 0xdc
+        assert digest[12] == 0x18
+        assert digest[13] == 0x5a
+        assert digest[14] == 0x75
+        assert digest[15] == 0x6e
+        assert digest[16] == 0x97
+        assert digest[17] == 0xc9
+        assert digest[18] == 0x82
+        assert digest[19] == 0x16
+        assert digest[20] == 0x4f
+        assert digest[21] == 0xe2
+        assert digest[22] == 0x58
+        assert digest[23] == 0x59
+        assert digest[24] == 0xe0
+        assert digest[25] == 0xd1
+        assert digest[26] == 0xdc
+        assert digest[27] == 0xc1
+        assert digest[28] == 0x47
+        assert digest[29] == 0x5c
+        assert digest[30] == 0x80
+        assert digest[31] == 0xa6
+        assert digest[32] == 0x15
+        assert digest[33] == 0xb2
+        assert digest[34] == 0x12
+        assert digest[35] == 0x3a
+        assert digest[36] == 0xf1
+        assert digest[37] == 0xf5
+        assert digest[38] == 0xf9
+        assert digest[39] == 0x4c
+        assert digest[40] == 0x11
+        assert digest[41] == 0xe3
+        assert digest[42] == 0xe9
+        assert digest[43] == 0x40
+        assert digest[44] == 0x2c
+        assert digest[45] == 0x3a
+        assert digest[46] == 0xc5
+        assert digest[47] == 0x58
+        assert digest[48] == 0xf5
+        assert digest[49] == 0x00
+        assert digest[50] == 0x19
+        assert digest[51] == 0x9d
+        assert digest[52] == 0x95
+        assert digest[53] == 0xb6
+        assert digest[54] == 0xd3
+        assert digest[55] == 0xe3
+        assert digest[56] == 0x01
+        assert digest[57] == 0x75
+        assert digest[58] == 0x85
+        assert digest[59] == 0x86
+        assert digest[60] == 0x28
+        assert digest[61] == 0x1d
+        assert digest[62] == 0xcd
+        assert digest[63] == 0x26
+    }
+
+    // NIST FIPS 202 test vector: SHA3-512("abc").
+    // Expected:
+    //   b7 51 85 0b  1a 57 16 8a  56 93 cd 92  4b 6b 09 6e
+    //   08 f6 21 82  74 44 f7 0d  88 4f 5d 02  40 d2 71 2e
+    //   10 e1 16 e9  19 2a f3 c9  1a 7e c5 76  47 e3 93 40
+    //   57 34 0b 4c  f4 08 d5 a5  65 92 f8 27  4e ec 53 f0
+    @Test fn TestAbcMessage()
+    {
+        this.sha.Reset()
+        var lastBlock: byte[72]
+        lastBlock[0] = 0x61
+        lastBlock[1] = 0x62
+        lastBlock[2] = 0x63
+        this.sha.Finalize(lastBlock, 3)
+        var digest: byte[64] = this.sha.GetDigest()
+        assert digest[0]  == 0xb7
+        assert digest[1]  == 0x51
+        assert digest[2]  == 0x85
+        assert digest[3]  == 0x0b
+        assert digest[4]  == 0x1a
+        assert digest[5]  == 0x57
+        assert digest[6]  == 0x16
+        assert digest[7]  == 0x8a
+        assert digest[8]  == 0x56
+        assert digest[9]  == 0x93
+        assert digest[10] == 0xcd
+        assert digest[11] == 0x92
+        assert digest[12] == 0x4b
+        assert digest[13] == 0x6b
+        assert digest[14] == 0x09
+        assert digest[15] == 0x6e
+        assert digest[16] == 0x08
+        assert digest[17] == 0xf6
+        assert digest[18] == 0x21
+        assert digest[19] == 0x82
+        assert digest[20] == 0x74
+        assert digest[21] == 0x44
+        assert digest[22] == 0xf7
+        assert digest[23] == 0x0d
+        assert digest[24] == 0x88
+        assert digest[25] == 0x4f
+        assert digest[26] == 0x5d
+        assert digest[27] == 0x02
+        assert digest[28] == 0x40
+        assert digest[29] == 0xd2
+        assert digest[30] == 0x71
+        assert digest[31] == 0x2e
+        assert digest[32] == 0x10
+        assert digest[33] == 0xe1
+        assert digest[34] == 0x16
+        assert digest[35] == 0xe9
+        assert digest[36] == 0x19
+        assert digest[37] == 0x2a
+        assert digest[38] == 0xf3
+        assert digest[39] == 0xc9
+        assert digest[40] == 0x1a
+        assert digest[41] == 0x7e
+        assert digest[42] == 0xc5
+        assert digest[43] == 0x76
+        assert digest[44] == 0x47
+        assert digest[45] == 0xe3
+        assert digest[46] == 0x93
+        assert digest[47] == 0x40
+        assert digest[48] == 0x57
+        assert digest[49] == 0x34
+        assert digest[50] == 0x0b
+        assert digest[51] == 0x4c
+        assert digest[52] == 0xf4
+        assert digest[53] == 0x08
+        assert digest[54] == 0xd5
+        assert digest[55] == 0xa5
+        assert digest[56] == 0x65
+        assert digest[57] == 0x92
+        assert digest[58] == 0xf8
+        assert digest[59] == 0x27
+        assert digest[60] == 0x4e
+        assert digest[61] == 0xec
+        assert digest[62] == 0x53
+        assert digest[63] == 0xf0
+    }
+}

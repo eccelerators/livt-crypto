@@ -1,0 +1,172 @@
+namespace Livt.Crypto.Tests.Aes
+using Livt.Crypto.Aes
+
+
+
+@Test
+component AesDecryptBlock128Test
+{
+    aes: DecryptBlock128
+    enc: EncryptBlock128
+
+    new()
+    {
+        this.aes = new DecryptBlock128()
+        this.enc = new EncryptBlock128()
+    }
+
+    // NIST FIPS 197 Appendix C.1 AES-128 decryption vector.
+    // Key:        000102030405060708090a0b0c0d0e0f
+    // Ciphertext: 69c4e0d86a7b0430d8cdb78070b4c55a
+    // Plaintext:  00112233445566778899aabbccddeeff
+    // Verify: echo "69c4e0d86a7b0430d8cdb78070b4c55a" | xxd -r -p | openssl enc -d -aes-128-ecb -K 000102030405060708090a0b0c0d0e0f -nopad 2>/dev/null | xxd -p
+    @Test
+    fn TestNistFips197()
+    {
+        var key: byte[16] = [
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+            0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f]
+
+        var ciphertext: byte[16] = [
+            0x69, 0xc4, 0xe0, 0xd8, 0x6a, 0x7b, 0x04, 0x30,
+            0xd8, 0xcd, 0xb7, 0x80, 0x70, 0xb4, 0xc5, 0x5a]
+
+        this.aes.SetKey(key)
+        this.aes.LoadBlock(ciphertext)
+        this.aes.DecryptBlock()
+
+        var pt: byte[16] = this.aes.GetBlock()
+        assert pt[0]  == 0x00
+        assert pt[1]  == 0x11
+        assert pt[2]  == 0x22
+        assert pt[3]  == 0x33
+        assert pt[4]  == 0x44
+        assert pt[5]  == 0x55
+        assert pt[6]  == 0x66
+        assert pt[7]  == 0x77
+        assert pt[8]  == 0x88
+        assert pt[9]  == 0x99
+        assert pt[10] == 0xaa
+        assert pt[11] == 0xbb
+        assert pt[12] == 0xcc
+        assert pt[13] == 0xdd
+        assert pt[14] == 0xee
+        assert pt[15] == 0xff
+    }
+
+    // NIST SP 800-38A Appendix F.1.1 AES-128 ECB — block 1 decryption.
+    // Key:         2b7e151628aed2a6abf7158809cf4f3c
+    // Ciphertext:  3ad77bb40d7a3660a89ecaf32466ef97
+    // Plaintext:   6bc1bee22e409f96e93d7e117393172a
+    // Verify: echo "3ad77bb40d7a3660a89ecaf32466ef97" | xxd -r -p | openssl enc -d -aes-128-ecb -K 2b7e151628aed2a6abf7158809cf4f3c -nopad 2>/dev/null | xxd -p
+    @Test
+    fn TestNistSp80038ABlock1()
+    {
+        var key: byte[16] = [
+            0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,
+            0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c]
+
+        var ciphertext: byte[16] = [
+            0x3a, 0xd7, 0x7b, 0xb4, 0x0d, 0x7a, 0x36, 0x60,
+            0xa8, 0x9e, 0xca, 0xf3, 0x24, 0x66, 0xef, 0x97]
+
+        this.aes.SetKey(key)
+        this.aes.LoadBlock(ciphertext)
+        this.aes.DecryptBlock()
+
+        var pt: byte[16] = this.aes.GetBlock()
+        assert pt[0]  == 0x6b
+        assert pt[1]  == 0xc1
+        assert pt[2]  == 0xbe
+        assert pt[3]  == 0xe2
+        assert pt[4]  == 0x2e
+        assert pt[5]  == 0x40
+        assert pt[6]  == 0x9f
+        assert pt[7]  == 0x96
+        assert pt[8]  == 0xe9
+        assert pt[9]  == 0x3d
+        assert pt[10] == 0x7e
+        assert pt[11] == 0x11
+        assert pt[12] == 0x73
+        assert pt[13] == 0x93
+        assert pt[14] == 0x17
+        assert pt[15] == 0x2a
+    }
+
+    // All-zero 128-bit key: decrypt 66e94bd4ef8a2c3b884cfa59ca342b2e → all zeros.
+    // Verify: echo "66e94bd4ef8a2c3b884cfa59ca342b2e" | xxd -r -p | openssl enc -d -aes-128-ecb -K 00000000000000000000000000000000 -nopad 2>/dev/null | xxd -p
+    @Test
+    fn TestAllZeroKeyAndCiphertext()
+    {
+        var key: byte[16] = [
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+
+        var ciphertext: byte[16] = [
+            0x66, 0xe9, 0x4b, 0xd4, 0xef, 0x8a, 0x2c, 0x3b,
+            0x88, 0x4c, 0xfa, 0x59, 0xca, 0x34, 0x2b, 0x2e]
+
+        this.aes.SetKey(key)
+        this.aes.LoadBlock(ciphertext)
+        this.aes.DecryptBlock()
+
+        var pt: byte[16] = this.aes.GetBlock()
+        assert pt[0]  == 0x00
+        assert pt[1]  == 0x00
+        assert pt[2]  == 0x00
+        assert pt[3]  == 0x00
+        assert pt[4]  == 0x00
+        assert pt[5]  == 0x00
+        assert pt[6]  == 0x00
+        assert pt[7]  == 0x00
+        assert pt[8]  == 0x00
+        assert pt[9]  == 0x00
+        assert pt[10] == 0x00
+        assert pt[11] == 0x00
+        assert pt[12] == 0x00
+        assert pt[13] == 0x00
+        assert pt[14] == 0x00
+        assert pt[15] == 0x00
+    }
+
+    // User behaviour: encrypt a block then decrypt the result — must recover the
+    // original plaintext.  Uses the NIST FIPS 197 Appendix C.1 key.
+    @Test
+    fn TestEncryptDecryptRoundtrip()
+    {
+        var key: byte[16] = [
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+            0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f]
+
+        var plaintext: byte[16] = [
+            0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
+            0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff]
+
+        this.enc.SetKey(key)
+        this.enc.LoadBlock(plaintext)
+        this.enc.EncryptBlock()
+        var ciphertext: byte[16] = this.enc.GetBlock()
+
+        this.aes.SetKey(key)
+        this.aes.LoadBlock(ciphertext)
+        this.aes.DecryptBlock()
+        var recovered: byte[16] = this.aes.GetBlock()
+
+        assert recovered[0]  == 0x00
+        assert recovered[1]  == 0x11
+        assert recovered[2]  == 0x22
+        assert recovered[3]  == 0x33
+        assert recovered[4]  == 0x44
+        assert recovered[5]  == 0x55
+        assert recovered[6]  == 0x66
+        assert recovered[7]  == 0x77
+        assert recovered[8]  == 0x88
+        assert recovered[9]  == 0x99
+        assert recovered[10] == 0xaa
+        assert recovered[11] == 0xbb
+        assert recovered[12] == 0xcc
+        assert recovered[13] == 0xdd
+        assert recovered[14] == 0xee
+        assert recovered[15] == 0xff
+    }
+}

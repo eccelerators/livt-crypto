@@ -1,0 +1,206 @@
+namespace Livt.Crypto.Tests.Aead
+using Livt.Crypto.Aead
+
+
+
+// ChaCha20-Poly1305 AEAD test suite (RFC 8439 §2.8).
+//
+// Reference vector from RFC 8439 §2.8.2:
+//   Key:   80 81 82 ... 9f
+//   Nonce: 07 00 00 00 40 41 42 43 44 45 46 47
+//
+// TestRfc8439EncryptNoAAD:
+//   PT = first 64 bytes of §2.8.2 plaintext (no AAD for simplicity)
+//   CT = d3 1a 8d 34 ... (first 64 bytes)
+//   Tag = f1 c5 b2 fe 4e 9b f6 75 47 4f 07 f1 df 59 e5 42
+@Test
+component ChaCha20Poly1305Test
+{
+    aead: ChaCha20Poly1305
+
+    new()
+    {
+        this.aead = new ChaCha20Poly1305()
+    }
+
+    // -----------------------------------------------------------------------
+    // TestRfc8439EncryptNoAAD: encrypt 64-byte plaintext (no AAD).
+    // Verifies first 8 CT bytes and full 16-byte tag.
+    // -----------------------------------------------------------------------
+    @Test
+    fn TestRfc8439EncryptNoAAD()
+    {
+        var key: byte[32] = [
+            0x80, 0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87,
+            0x88, 0x89, 0x8a, 0x8b, 0x8c, 0x8d, 0x8e, 0x8f,
+            0x90, 0x91, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97,
+            0x98, 0x99, 0x9a, 0x9b, 0x9c, 0x9d, 0x9e, 0x9f]
+
+        var nonce: byte[12] = [
+            0x07, 0x00, 0x00, 0x00,
+            0x40, 0x41, 0x42, 0x43,
+            0x44, 0x45, 0x46, 0x47]
+
+        var pt: byte[64] = [
+            0x4c, 0x61, 0x64, 0x69, 0x65, 0x73, 0x20, 0x61,
+            0x6e, 0x64, 0x20, 0x47, 0x65, 0x6e, 0x74, 0x6c,
+            0x65, 0x6d, 0x65, 0x6e, 0x20, 0x6f, 0x66, 0x20,
+            0x74, 0x68, 0x65, 0x20, 0x63, 0x6c, 0x61, 0x73,
+            0x73, 0x20, 0x6f, 0x66, 0x20, 0x27, 0x39, 0x39,
+            0x3a, 0x20, 0x49, 0x66, 0x20, 0x49, 0x20, 0x63,
+            0x6f, 0x75, 0x6c, 0x64, 0x20, 0x6f, 0x66, 0x66,
+            0x65, 0x72, 0x20, 0x79, 0x6f, 0x75, 0x20, 0x6f]
+
+        this.aead.SetKey(key)
+        this.aead.SetNonce(nonce)
+        this.aead.LoadBlock(pt)
+        this.aead.EncryptBlock()
+        this.aead.FinalizeTag(0, 64)
+
+        var ct: byte[64] = this.aead.GetBlock()
+        assert ct[0]  == 0xd3
+        assert ct[1]  == 0x1a
+        assert ct[2]  == 0x8d
+        assert ct[3]  == 0x34
+        assert ct[4]  == 0x64
+        assert ct[5]  == 0x8e
+        assert ct[6]  == 0x60
+        assert ct[7]  == 0xdb
+        assert ct[8]  == 0x7b
+        assert ct[9]  == 0x86
+        assert ct[10] == 0xaf
+        assert ct[11] == 0xbc
+        assert ct[12] == 0x53
+        assert ct[13] == 0xef
+        assert ct[14] == 0x7e
+        assert ct[15] == 0xc2
+        assert ct[16] == 0xa4
+        assert ct[17] == 0xad
+        assert ct[18] == 0xed
+        assert ct[19] == 0x51
+        assert ct[20] == 0x29
+        assert ct[21] == 0x6e
+        assert ct[22] == 0x08
+        assert ct[23] == 0xfe
+        assert ct[24] == 0xa9
+        assert ct[25] == 0xe2
+        assert ct[26] == 0xb5
+        assert ct[27] == 0xa7
+        assert ct[28] == 0x36
+        assert ct[29] == 0xee
+        assert ct[30] == 0x62
+        assert ct[31] == 0xd6
+        assert ct[32] == 0x3d
+        assert ct[33] == 0xbe
+        assert ct[34] == 0xa4
+        assert ct[35] == 0x5e
+        assert ct[36] == 0x8c
+        assert ct[37] == 0xa9
+        assert ct[38] == 0x67
+        assert ct[39] == 0x12
+        assert ct[40] == 0x82
+        assert ct[41] == 0xfa
+        assert ct[42] == 0xfb
+        assert ct[43] == 0x69
+        assert ct[44] == 0xda
+        assert ct[45] == 0x92
+        assert ct[46] == 0x72
+        assert ct[47] == 0x8b
+        assert ct[48] == 0x1a
+        assert ct[49] == 0x71
+        assert ct[50] == 0xde
+        assert ct[51] == 0x0a
+        assert ct[52] == 0x9e
+        assert ct[53] == 0x06
+        assert ct[54] == 0x0b
+        assert ct[55] == 0x29
+        assert ct[56] == 0x05
+        assert ct[57] == 0xd6
+        assert ct[58] == 0xa5
+        assert ct[59] == 0xb6
+        assert ct[60] == 0x7e
+        assert ct[61] == 0xcd
+        assert ct[62] == 0x3b
+        assert ct[63] == 0x36
+
+        var tag: byte[16] = this.aead.GetTag()
+        assert tag[0]  == 0xf1
+        assert tag[1]  == 0xc5
+        assert tag[2]  == 0xb2
+        assert tag[3]  == 0xfe
+        assert tag[4]  == 0x4e
+        assert tag[5]  == 0x9b
+        assert tag[6]  == 0xf6
+        assert tag[7]  == 0x75
+        assert tag[8]  == 0x47
+        assert tag[9]  == 0x4f
+        assert tag[10] == 0x07
+        assert tag[11] == 0xf1
+        assert tag[12] == 0xdf
+        assert tag[13] == 0x59
+        assert tag[14] == 0xe5
+        assert tag[15] == 0x42
+
+        var ok: int = this.aead.VerifyTag(tag)
+        assert ok == 1
+        tag[0] = tag[0] ^ 0x01
+        var bad: int = this.aead.VerifyTag(tag)
+        assert bad == 0
+    }
+
+    // -----------------------------------------------------------------------
+    // TestDecryptRoundtrip: encrypt then decrypt — must recover original PT.
+    // -----------------------------------------------------------------------
+    @Test
+    fn TestDecryptRoundtrip()
+    {
+        var key: byte[32] = [
+            0x80, 0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87,
+            0x88, 0x89, 0x8a, 0x8b, 0x8c, 0x8d, 0x8e, 0x8f,
+            0x90, 0x91, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97,
+            0x98, 0x99, 0x9a, 0x9b, 0x9c, 0x9d, 0x9e, 0x9f]
+
+        var nonce: byte[12] = [
+            0x07, 0x00, 0x00, 0x00,
+            0x40, 0x41, 0x42, 0x43,
+            0x44, 0x45, 0x46, 0x47]
+
+        var pt: byte[64] = [
+            0x4c, 0x61, 0x64, 0x69, 0x65, 0x73, 0x20, 0x61,
+            0x6e, 0x64, 0x20, 0x47, 0x65, 0x6e, 0x74, 0x6c,
+            0x65, 0x6d, 0x65, 0x6e, 0x20, 0x6f, 0x66, 0x20,
+            0x74, 0x68, 0x65, 0x20, 0x63, 0x6c, 0x61, 0x73,
+            0x73, 0x20, 0x6f, 0x66, 0x20, 0x27, 0x39, 0x39,
+            0x3a, 0x20, 0x49, 0x66, 0x20, 0x49, 0x20, 0x63,
+            0x6f, 0x75, 0x6c, 0x64, 0x20, 0x6f, 0x66, 0x66,
+            0x65, 0x72, 0x20, 0x79, 0x6f, 0x75, 0x20, 0x6f]
+
+        // Encrypt.
+        this.aead.SetKey(key)
+        this.aead.SetNonce(nonce)
+        this.aead.LoadBlock(pt)
+        this.aead.EncryptBlock()
+        var ct: byte[64] = this.aead.GetBlock()
+
+        // Decrypt (must reset nonce to reset counter).
+        this.aead.SetNonce(nonce)
+        this.aead.LoadBlock(ct)
+        this.aead.DecryptBlock()
+        var recovered: byte[64] = this.aead.GetBlock()
+
+        assert recovered[0]  == 0x4c
+        assert recovered[1]  == 0x61
+        assert recovered[2]  == 0x64
+        assert recovered[3]  == 0x69
+        assert recovered[4]  == 0x65
+        assert recovered[5]  == 0x73
+        assert recovered[6]  == 0x20
+        assert recovered[7]  == 0x61
+        assert recovered[8]  == 0x6e
+        assert recovered[9]  == 0x64
+        assert recovered[10] == 0x20
+        assert recovered[11] == 0x47
+        assert recovered[32] == 0x73
+        assert recovered[63] == 0x6f
+    }
+}

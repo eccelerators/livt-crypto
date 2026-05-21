@@ -1,0 +1,348 @@
+namespace Livt.Crypto.Aes
+
+// AES-256 CBC (Cipher Block Chaining) mode — single-block interface.
+// Encrypt: Ci = AES256_Encrypt(Pi XOR C_{i-1}), where C_0 = IV.
+// Decrypt: Pi = AES256_Decrypt(Ci) XOR C_{i-1}, where C_0 = IV.
+// IV is updated automatically after each EncryptBlock / DecryptBlock call.
+component Cbc256
+{
+    public const KEY_SIZE:   int = 32
+    public const BLOCK_SIZE: int = 16
+    public const IV_SIZE:    int = 16
+
+    enc:    EncryptBlock256
+    dec:    DecryptBlock256
+    iv:     byte[16]
+    blk:    byte[16]
+    outBlk: byte[16]
+
+    new()
+    {
+        this.enc = new EncryptBlock256()
+        this.dec = new DecryptBlock256()
+    }
+
+    // -----------------------------------------------------------------------
+    // Public API
+    // -----------------------------------------------------------------------
+
+    public fn SetKey(key: byte[32])
+    {
+        this.enc.SetKey(key)
+        this.dec.SetKey(key)
+    }
+
+    public fn SetIV(iv: byte[16])
+    {
+        state {
+            this.iv[0]  = iv[0]
+            this.iv[1]  = iv[1]
+            this.iv[2]  = iv[2]
+            this.iv[3]  = iv[3]
+            this.iv[4]  = iv[4]
+            this.iv[5]  = iv[5]
+            this.iv[6]  = iv[6]
+            this.iv[7]  = iv[7]
+            this.iv[8]  = iv[8]
+            this.iv[9]  = iv[9]
+            this.iv[10] = iv[10]
+            this.iv[11] = iv[11]
+            this.iv[12] = iv[12]
+            this.iv[13] = iv[13]
+            this.iv[14] = iv[14]
+            this.iv[15] = iv[15]
+        }
+    }
+
+    public fn LoadBlock(block: byte[16])
+    {
+        state {
+            this.blk[0]  = block[0]
+            this.blk[1]  = block[1]
+            this.blk[2]  = block[2]
+            this.blk[3]  = block[3]
+            this.blk[4]  = block[4]
+            this.blk[5]  = block[5]
+            this.blk[6]  = block[6]
+            this.blk[7]  = block[7]
+            this.blk[8]  = block[8]
+            this.blk[9]  = block[9]
+            this.blk[10] = block[10]
+            this.blk[11] = block[11]
+            this.blk[12] = block[12]
+            this.blk[13] = block[13]
+            this.blk[14] = block[14]
+            this.blk[15] = block[15]
+        }
+    }
+
+    // CBC encrypt: XOR plaintext with current IV, encrypt, update IV = ciphertext.
+    public fn EncryptBlock()
+    {
+        var b0:  byte = this.blk[0]
+        var b1:  byte = this.blk[1]
+        var b2:  byte = this.blk[2]
+        var b3:  byte = this.blk[3]
+        var b4:  byte = this.blk[4]
+        var b5:  byte = this.blk[5]
+        var b6:  byte = this.blk[6]
+        var b7:  byte = this.blk[7]
+        var b8:  byte = this.blk[8]
+        var b9:  byte = this.blk[9]
+        var b10: byte = this.blk[10]
+        var b11: byte = this.blk[11]
+        var b12: byte = this.blk[12]
+        var b13: byte = this.blk[13]
+        var b14: byte = this.blk[14]
+        var b15: byte = this.blk[15]
+
+        var iv0:  byte = this.iv[0]
+        var iv1:  byte = this.iv[1]
+        var iv2:  byte = this.iv[2]
+        var iv3:  byte = this.iv[3]
+        var iv4:  byte = this.iv[4]
+        var iv5:  byte = this.iv[5]
+        var iv6:  byte = this.iv[6]
+        var iv7:  byte = this.iv[7]
+        var iv8:  byte = this.iv[8]
+        var iv9:  byte = this.iv[9]
+        var iv10: byte = this.iv[10]
+        var iv11: byte = this.iv[11]
+        var iv12: byte = this.iv[12]
+        var iv13: byte = this.iv[13]
+        var iv14: byte = this.iv[14]
+        var iv15: byte = this.iv[15]
+
+        // XOR plaintext with IV and build input block in one cycle.
+        var xorBlock: byte[16]
+        state {
+            xorBlock[0]  = b0  ^ iv0
+            xorBlock[1]  = b1  ^ iv1
+            xorBlock[2]  = b2  ^ iv2
+            xorBlock[3]  = b3  ^ iv3
+            xorBlock[4]  = b4  ^ iv4
+            xorBlock[5]  = b5  ^ iv5
+            xorBlock[6]  = b6  ^ iv6
+            xorBlock[7]  = b7  ^ iv7
+            xorBlock[8]  = b8  ^ iv8
+            xorBlock[9]  = b9  ^ iv9
+            xorBlock[10] = b10 ^ iv10
+            xorBlock[11] = b11 ^ iv11
+            xorBlock[12] = b12 ^ iv12
+            xorBlock[13] = b13 ^ iv13
+            xorBlock[14] = b14 ^ iv14
+            xorBlock[15] = b15 ^ iv15
+        }
+
+        // Encrypt.
+        this.enc.LoadBlock(xorBlock)
+        this.enc.EncryptBlock()
+
+        // Capture ciphertext.
+        var ct: byte[16] = this.enc.GetBlock()
+
+        // Update IV = ciphertext for next block.
+        state {
+            this.iv[0]  = ct[0]
+            this.iv[1]  = ct[1]
+            this.iv[2]  = ct[2]
+            this.iv[3]  = ct[3]
+            this.iv[4]  = ct[4]
+            this.iv[5]  = ct[5]
+            this.iv[6]  = ct[6]
+            this.iv[7]  = ct[7]
+            this.iv[8]  = ct[8]
+            this.iv[9]  = ct[9]
+            this.iv[10] = ct[10]
+            this.iv[11] = ct[11]
+            this.iv[12] = ct[12]
+            this.iv[13] = ct[13]
+            this.iv[14] = ct[14]
+            this.iv[15] = ct[15]
+        }
+
+        // Store output.
+        state {
+            this.outBlk[0]  = ct[0]
+            this.outBlk[1]  = ct[1]
+            this.outBlk[2]  = ct[2]
+            this.outBlk[3]  = ct[3]
+            this.outBlk[4]  = ct[4]
+            this.outBlk[5]  = ct[5]
+            this.outBlk[6]  = ct[6]
+            this.outBlk[7]  = ct[7]
+            this.outBlk[8]  = ct[8]
+            this.outBlk[9]  = ct[9]
+            this.outBlk[10] = ct[10]
+            this.outBlk[11] = ct[11]
+            this.outBlk[12] = ct[12]
+            this.outBlk[13] = ct[13]
+            this.outBlk[14] = ct[14]
+            this.outBlk[15] = ct[15]
+        }
+    }
+
+    // CBC decrypt: decrypt ciphertext, XOR with current IV, update IV = ciphertext.
+    public fn DecryptBlock()
+    {
+        var c0:  byte = this.blk[0]
+        var c1:  byte = this.blk[1]
+        var c2:  byte = this.blk[2]
+        var c3:  byte = this.blk[3]
+        var c4:  byte = this.blk[4]
+        var c5:  byte = this.blk[5]
+        var c6:  byte = this.blk[6]
+        var c7:  byte = this.blk[7]
+        var c8:  byte = this.blk[8]
+        var c9:  byte = this.blk[9]
+        var c10: byte = this.blk[10]
+        var c11: byte = this.blk[11]
+        var c12: byte = this.blk[12]
+        var c13: byte = this.blk[13]
+        var c14: byte = this.blk[14]
+        var c15: byte = this.blk[15]
+
+        var iv0:  byte = this.iv[0]
+        var iv1:  byte = this.iv[1]
+        var iv2:  byte = this.iv[2]
+        var iv3:  byte = this.iv[3]
+        var iv4:  byte = this.iv[4]
+        var iv5:  byte = this.iv[5]
+        var iv6:  byte = this.iv[6]
+        var iv7:  byte = this.iv[7]
+        var iv8:  byte = this.iv[8]
+        var iv9:  byte = this.iv[9]
+        var iv10: byte = this.iv[10]
+        var iv11: byte = this.iv[11]
+        var iv12: byte = this.iv[12]
+        var iv13: byte = this.iv[13]
+        var iv14: byte = this.iv[14]
+        var iv15: byte = this.iv[15]
+
+        // Build ciphertext block to pass to AES decrypt.
+        var ctBlock: byte[16]
+        state {
+            ctBlock[0]  = c0
+            ctBlock[1]  = c1
+            ctBlock[2]  = c2
+            ctBlock[3]  = c3
+            ctBlock[4]  = c4
+            ctBlock[5]  = c5
+            ctBlock[6]  = c6
+            ctBlock[7]  = c7
+            ctBlock[8]  = c8
+            ctBlock[9]  = c9
+            ctBlock[10] = c10
+            ctBlock[11] = c11
+            ctBlock[12] = c12
+            ctBlock[13] = c13
+            ctBlock[14] = c14
+            ctBlock[15] = c15
+        }
+
+        // Decrypt.
+        this.dec.LoadBlock(ctBlock)
+        this.dec.DecryptBlock()
+
+        // Capture decrypted bytes.
+        var decBlk: byte[16] = this.dec.GetBlock()
+
+        var d0:  byte = decBlk[0]
+        var d1:  byte = decBlk[1]
+        var d2:  byte = decBlk[2]
+        var d3:  byte = decBlk[3]
+        var d4:  byte = decBlk[4]
+        var d5:  byte = decBlk[5]
+        var d6:  byte = decBlk[6]
+        var d7:  byte = decBlk[7]
+        var d8:  byte = decBlk[8]
+        var d9:  byte = decBlk[9]
+        var d10: byte = decBlk[10]
+        var d11: byte = decBlk[11]
+        var d12: byte = decBlk[12]
+        var d13: byte = decBlk[13]
+        var d14: byte = decBlk[14]
+        var d15: byte = decBlk[15]
+
+        // Update IV = ciphertext for next block.
+        state {
+            this.iv[0]  = ctBlock[0]
+            this.iv[1]  = ctBlock[1]
+            this.iv[2]  = ctBlock[2]
+            this.iv[3]  = ctBlock[3]
+            this.iv[4]  = ctBlock[4]
+            this.iv[5]  = ctBlock[5]
+            this.iv[6]  = ctBlock[6]
+            this.iv[7]  = ctBlock[7]
+            this.iv[8]  = ctBlock[8]
+            this.iv[9]  = ctBlock[9]
+            this.iv[10] = ctBlock[10]
+            this.iv[11] = ctBlock[11]
+            this.iv[12] = ctBlock[12]
+            this.iv[13] = ctBlock[13]
+            this.iv[14] = ctBlock[14]
+            this.iv[15] = ctBlock[15]
+        }
+
+        // Store plaintext output.
+        var ptBlock: byte[16]
+        state {
+            ptBlock[0]  = d0  ^ iv0
+            ptBlock[1]  = d1  ^ iv1
+            ptBlock[2]  = d2  ^ iv2
+            ptBlock[3]  = d3  ^ iv3
+            ptBlock[4]  = d4  ^ iv4
+            ptBlock[5]  = d5  ^ iv5
+            ptBlock[6]  = d6  ^ iv6
+            ptBlock[7]  = d7  ^ iv7
+            ptBlock[8]  = d8  ^ iv8
+            ptBlock[9]  = d9  ^ iv9
+            ptBlock[10] = d10 ^ iv10
+            ptBlock[11] = d11 ^ iv11
+            ptBlock[12] = d12 ^ iv12
+            ptBlock[13] = d13 ^ iv13
+            ptBlock[14] = d14 ^ iv14
+            ptBlock[15] = d15 ^ iv15
+        }
+
+        state {
+            this.outBlk[0]  = ptBlock[0]
+            this.outBlk[1]  = ptBlock[1]
+            this.outBlk[2]  = ptBlock[2]
+            this.outBlk[3]  = ptBlock[3]
+            this.outBlk[4]  = ptBlock[4]
+            this.outBlk[5]  = ptBlock[5]
+            this.outBlk[6]  = ptBlock[6]
+            this.outBlk[7]  = ptBlock[7]
+            this.outBlk[8]  = ptBlock[8]
+            this.outBlk[9]  = ptBlock[9]
+            this.outBlk[10] = ptBlock[10]
+            this.outBlk[11] = ptBlock[11]
+            this.outBlk[12] = ptBlock[12]
+            this.outBlk[13] = ptBlock[13]
+            this.outBlk[14] = ptBlock[14]
+            this.outBlk[15] = ptBlock[15]
+        }
+    }
+
+    public fn GetBlock() byte[16]
+    {
+        return this.outBlk
+    }
+
+    public fn GetByte(idx: int) byte
+    {
+        return this.outBlk[idx]
+    }
+
+    public fn GetIV() byte[16]
+    {
+        return this.iv
+    }
+
+    public fn ClearKey()
+    {
+        this.enc.ClearKey()
+        this.dec.ClearKey()
+    }
+}

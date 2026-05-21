@@ -1,0 +1,84 @@
+namespace Livt.Crypto.Hash
+using Livt.Crypto.Internal
+
+
+// SHA-3-512 (NIST FIPS 202) — Keccak-based hash, 512-bit output.
+//
+// Parameters: rate = 72 bytes, capacity = 128 bytes, output = 64 bytes.
+// Domain separation suffix: 0x06.
+//
+// Usage:
+//   1. Reset()                      — clear state for a new message
+//   2. ProcessBlock(msg: byte[72])  — absorb one rate-sized block (before padding)
+//      Repeat step 2 for each full 72-byte block.
+//   3. Finalize(lastBlock, lastLen) — absorb the final partial block with padding
+//   4. GetDigest() byte[64]         — read first 64 bytes of squeezed output
+//
+// The caller applies SHA-3 domain suffix (0x06) and Keccak padding via Finalize.
+component Sha3512
+{
+    public const BLOCK_SIZE:  int = 72   // rate = 1600 - 1024 bits = 72 bytes
+    public const DIGEST_SIZE: int = 64
+
+    keccak: Keccak
+
+    new()
+    {
+        this.keccak = new Keccak()
+    }
+
+    // -----------------------------------------------------------------------
+    // Public API
+    // -----------------------------------------------------------------------
+
+    // Reset: initialise state for a new hash.
+    public fn Reset()
+    {
+        this.keccak.Reset()
+    }
+
+    // ProcessBlock: absorb one full 72-byte rate block.
+    public fn ProcessBlock(msg: byte[72])
+    {
+        var buf: byte[200]
+        for (var i = 0; i < 72; i++)
+        {
+            buf[i] = msg[i]
+        }
+        this.keccak.XorBytes(buf, 72)
+        this.keccak.Permute()
+    }
+
+    // Finalize: absorb the last partial block (lastLen bytes of lastBlock),
+    // apply SHA-3 padding (0x06 at lastLen, 0x80 at byte 71), then permute.
+    // lastLen must be in [0, 71].
+    public fn Finalize(lastBlock: byte[72], lastLen: int)
+    {
+        var buf: byte[200]
+        for (var i = 0; i < lastLen; i++)
+        {
+            buf[i] = lastBlock[i]
+        }
+        buf[lastLen] = 0x06
+        buf[71] = 0x80
+        // If lastLen == 71, 0x06 and 0x80 are at the same byte → XOR = 0x86.
+        if (lastLen == 71)
+        {
+            buf[71] = 0x86
+        }
+        this.keccak.XorBytes(buf, 72)
+        this.keccak.Permute()
+    }
+
+    // GetDigest: return first 64 bytes (512 bits) of state as digest.
+    public fn GetDigest() byte[64]
+    {
+        var digest: byte[64]
+        for (var i = 0; i < 64; i++)
+        {
+            var bi: byte = this.keccak.GetByte(i)
+            digest[i] = bi
+        }
+        return digest
+    }
+}

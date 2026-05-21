@@ -1,0 +1,545 @@
+namespace Livt.Crypto.Internal
+
+// Keccak-f[1600] permutation — 1600-bit state, 24 rounds.
+//
+// The 200-byte state A holds 25 64-bit lanes in little-endian byte order.
+// Lane (x, y) occupies A[(y*5 + x)*8 .. (y*5 + x)*8 + 7] with b0 = LSByte.
+//
+// Usage:
+//   1. Reset() — zero the state
+//   2. XorBytes(buf, len) — absorb up to 200 bytes into the state
+//   3. Permute() — apply Keccak-f[1600] (24 rounds)
+//   4. GetByte(idx) byte — read a single state byte
+//
+// SHA-3 callers are responsible for padding, absorbing, and squeezing.
+component Keccak
+{
+    A: byte[200]   // 1600-bit state, 25 × 8 bytes LE
+
+    // -----------------------------------------------------------------------
+    // Keccak-f[1600] round constants split by byte position (LE, b0 = LSByte).
+    // RC0[i] = byte 0 (LSByte) of round constant i; RC7[i] = byte 7 (MSByte).
+    // -----------------------------------------------------------------------
+    const RC0: byte[24] = [
+        0x01, 0x82, 0x8a, 0x00, 0x8b, 0x01, 0x81, 0x09,
+        0x8a, 0x88, 0x09, 0x0a, 0x8b, 0x8b, 0x89, 0x03,
+        0x02, 0x80, 0x0a, 0x0a, 0x81, 0x80, 0x01, 0x08]
+    const RC1: byte[24] = [
+        0x00, 0x80, 0x80, 0x80, 0x80, 0x00, 0x80, 0x80,
+        0x00, 0x00, 0x80, 0x00, 0x80, 0x00, 0x80, 0x80,
+        0x80, 0x00, 0x80, 0x00, 0x80, 0x80, 0x00, 0x80]
+    const RC2: byte[24] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+    const RC3: byte[24] = [
+        0x00, 0x00, 0x00, 0x80, 0x00, 0x80, 0x80, 0x00,
+        0x00, 0x00, 0x80, 0x80, 0x80, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x80, 0x80, 0x00, 0x80, 0x80]
+    const RC4: byte[24] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+    const RC5: byte[24] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+    const RC6: byte[24] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+    const RC7: byte[24] = [
+        0x00, 0x00, 0x80, 0x80, 0x00, 0x00, 0x80, 0x80,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x80, 0x80,
+        0x80, 0x80, 0x00, 0x80, 0x80, 0x80, 0x00, 0x80]
+
+    // ρ rotation offsets per lane l = y*5 + x (left rotations, LE).
+    // Lane 0 (x=0,y=0) has offset 0 (identity).
+    const RHO: int[25] = [
+         0,  1, 62, 28, 27,
+        36, 44,  6, 55, 20,
+         3, 10, 43, 25, 39,
+        41, 45, 15, 21,  8,
+        18,  2, 61, 56, 14]
+
+    new()
+    {
+    }
+
+    // -----------------------------------------------------------------------
+    // Public API
+    // -----------------------------------------------------------------------
+
+    // Reset: zero the 1600-bit state.
+    public fn Reset()
+    {
+        for (var i = 0; i < 200; i++)
+        {
+            this.A[i] = 0x00
+        }
+    }
+
+    // XorBytes: XOR the first len bytes of buf into the state (for absorption).
+    // Caller must ensure len <= 200.
+    public fn XorBytes(buf: byte[200], len: int)
+    {
+        for (var i = 0; i < len; i++)
+        {
+            var ai: byte = this.A[i]
+            var bi: byte = buf[i]
+            var xi: byte = ai ^ bi
+            this.A[i] = xi
+        }
+    }
+
+    // Permute: apply Keccak-f[1600] (24 rounds) to this.A.
+    public fn Permute()
+    {
+        for (var rnd = 0; rnd < 24; rnd++)
+        {
+            // ----------------------------------------------------------------
+            // θ (theta): mix column parities into each lane.
+            // C[x] = A[x,0] XOR A[x,1] XOR A[x,2] XOR A[x,3] XOR A[x,4]
+            // D[x] = C[x-1] XOR Rotl1(C[x+1])
+            // A[x,y] ^= D[x]
+            // ----------------------------------------------------------------
+
+            // Compute C[0..4]: XOR of 5 rows per column.
+            // C[x] stored as c_x_b0..c_x_b7 (LE bytes)
+            var c0b0: byte = this.A[0];  var c0b1: byte = this.A[1];  var c0b2: byte = this.A[2];  var c0b3: byte = this.A[3]
+            var c0b4: byte = this.A[4];  var c0b5: byte = this.A[5];  var c0b6: byte = this.A[6];  var c0b7: byte = this.A[7]
+            var c1b0: byte = this.A[8];  var c1b1: byte = this.A[9];  var c1b2: byte = this.A[10]; var c1b3: byte = this.A[11]
+            var c1b4: byte = this.A[12]; var c1b5: byte = this.A[13]; var c1b6: byte = this.A[14]; var c1b7: byte = this.A[15]
+            var c2b0: byte = this.A[16]; var c2b1: byte = this.A[17]; var c2b2: byte = this.A[18]; var c2b3: byte = this.A[19]
+            var c2b4: byte = this.A[20]; var c2b5: byte = this.A[21]; var c2b6: byte = this.A[22]; var c2b7: byte = this.A[23]
+            var c3b0: byte = this.A[24]; var c3b1: byte = this.A[25]; var c3b2: byte = this.A[26]; var c3b3: byte = this.A[27]
+            var c3b4: byte = this.A[28]; var c3b5: byte = this.A[29]; var c3b6: byte = this.A[30]; var c3b7: byte = this.A[31]
+            var c4b0: byte = this.A[32]; var c4b1: byte = this.A[33]; var c4b2: byte = this.A[34]; var c4b3: byte = this.A[35]
+            var c4b4: byte = this.A[36]; var c4b5: byte = this.A[37]; var c4b6: byte = this.A[38]; var c4b7: byte = this.A[39]
+
+            // XOR rows y=1..4 into C[x].
+            c0b0 = c0b0 ^ this.A[40];  c0b1 = c0b1 ^ this.A[41]
+            c0b2 = c0b2 ^ this.A[42];  c0b3 = c0b3 ^ this.A[43]
+            c0b4 = c0b4 ^ this.A[44];  c0b5 = c0b5 ^ this.A[45]
+            c0b6 = c0b6 ^ this.A[46];  c0b7 = c0b7 ^ this.A[47]
+            c1b0 = c1b0 ^ this.A[48];  c1b1 = c1b1 ^ this.A[49]
+            c1b2 = c1b2 ^ this.A[50];  c1b3 = c1b3 ^ this.A[51]
+            c1b4 = c1b4 ^ this.A[52];  c1b5 = c1b5 ^ this.A[53]
+            c1b6 = c1b6 ^ this.A[54];  c1b7 = c1b7 ^ this.A[55]
+            c2b0 = c2b0 ^ this.A[56];  c2b1 = c2b1 ^ this.A[57]
+            c2b2 = c2b2 ^ this.A[58];  c2b3 = c2b3 ^ this.A[59]
+            c2b4 = c2b4 ^ this.A[60];  c2b5 = c2b5 ^ this.A[61]
+            c2b6 = c2b6 ^ this.A[62];  c2b7 = c2b7 ^ this.A[63]
+            c3b0 = c3b0 ^ this.A[64];  c3b1 = c3b1 ^ this.A[65]
+            c3b2 = c3b2 ^ this.A[66];  c3b3 = c3b3 ^ this.A[67]
+            c3b4 = c3b4 ^ this.A[68];  c3b5 = c3b5 ^ this.A[69]
+            c3b6 = c3b6 ^ this.A[70];  c3b7 = c3b7 ^ this.A[71]
+            c4b0 = c4b0 ^ this.A[72];  c4b1 = c4b1 ^ this.A[73]
+            c4b2 = c4b2 ^ this.A[74];  c4b3 = c4b3 ^ this.A[75]
+            c4b4 = c4b4 ^ this.A[76];  c4b5 = c4b5 ^ this.A[77]
+            c4b6 = c4b6 ^ this.A[78];  c4b7 = c4b7 ^ this.A[79]
+
+            c0b0 = c0b0 ^ this.A[80];  c0b1 = c0b1 ^ this.A[81]
+            c0b2 = c0b2 ^ this.A[82];  c0b3 = c0b3 ^ this.A[83]
+            c0b4 = c0b4 ^ this.A[84];  c0b5 = c0b5 ^ this.A[85]
+            c0b6 = c0b6 ^ this.A[86];  c0b7 = c0b7 ^ this.A[87]
+            c1b0 = c1b0 ^ this.A[88];  c1b1 = c1b1 ^ this.A[89]
+            c1b2 = c1b2 ^ this.A[90];  c1b3 = c1b3 ^ this.A[91]
+            c1b4 = c1b4 ^ this.A[92];  c1b5 = c1b5 ^ this.A[93]
+            c1b6 = c1b6 ^ this.A[94];  c1b7 = c1b7 ^ this.A[95]
+            c2b0 = c2b0 ^ this.A[96];  c2b1 = c2b1 ^ this.A[97]
+            c2b2 = c2b2 ^ this.A[98];  c2b3 = c2b3 ^ this.A[99]
+            c2b4 = c2b4 ^ this.A[100]; c2b5 = c2b5 ^ this.A[101]
+            c2b6 = c2b6 ^ this.A[102]; c2b7 = c2b7 ^ this.A[103]
+            c3b0 = c3b0 ^ this.A[104]; c3b1 = c3b1 ^ this.A[105]
+            c3b2 = c3b2 ^ this.A[106]; c3b3 = c3b3 ^ this.A[107]
+            c3b4 = c3b4 ^ this.A[108]; c3b5 = c3b5 ^ this.A[109]
+            c3b6 = c3b6 ^ this.A[110]; c3b7 = c3b7 ^ this.A[111]
+            c4b0 = c4b0 ^ this.A[112]; c4b1 = c4b1 ^ this.A[113]
+            c4b2 = c4b2 ^ this.A[114]; c4b3 = c4b3 ^ this.A[115]
+            c4b4 = c4b4 ^ this.A[116]; c4b5 = c4b5 ^ this.A[117]
+            c4b6 = c4b6 ^ this.A[118]; c4b7 = c4b7 ^ this.A[119]
+
+            c0b0 = c0b0 ^ this.A[120]; c0b1 = c0b1 ^ this.A[121]
+            c0b2 = c0b2 ^ this.A[122]; c0b3 = c0b3 ^ this.A[123]
+            c0b4 = c0b4 ^ this.A[124]; c0b5 = c0b5 ^ this.A[125]
+            c0b6 = c0b6 ^ this.A[126]; c0b7 = c0b7 ^ this.A[127]
+            c1b0 = c1b0 ^ this.A[128]; c1b1 = c1b1 ^ this.A[129]
+            c1b2 = c1b2 ^ this.A[130]; c1b3 = c1b3 ^ this.A[131]
+            c1b4 = c1b4 ^ this.A[132]; c1b5 = c1b5 ^ this.A[133]
+            c1b6 = c1b6 ^ this.A[134]; c1b7 = c1b7 ^ this.A[135]
+            c2b0 = c2b0 ^ this.A[136]; c2b1 = c2b1 ^ this.A[137]
+            c2b2 = c2b2 ^ this.A[138]; c2b3 = c2b3 ^ this.A[139]
+            c2b4 = c2b4 ^ this.A[140]; c2b5 = c2b5 ^ this.A[141]
+            c2b6 = c2b6 ^ this.A[142]; c2b7 = c2b7 ^ this.A[143]
+            c3b0 = c3b0 ^ this.A[144]; c3b1 = c3b1 ^ this.A[145]
+            c3b2 = c3b2 ^ this.A[146]; c3b3 = c3b3 ^ this.A[147]
+            c3b4 = c3b4 ^ this.A[148]; c3b5 = c3b5 ^ this.A[149]
+            c3b6 = c3b6 ^ this.A[150]; c3b7 = c3b7 ^ this.A[151]
+            c4b0 = c4b0 ^ this.A[152]; c4b1 = c4b1 ^ this.A[153]
+            c4b2 = c4b2 ^ this.A[154]; c4b3 = c4b3 ^ this.A[155]
+            c4b4 = c4b4 ^ this.A[156]; c4b5 = c4b5 ^ this.A[157]
+            c4b6 = c4b6 ^ this.A[158]; c4b7 = c4b7 ^ this.A[159]
+
+            c0b0 = c0b0 ^ this.A[160]; c0b1 = c0b1 ^ this.A[161]
+            c0b2 = c0b2 ^ this.A[162]; c0b3 = c0b3 ^ this.A[163]
+            c0b4 = c0b4 ^ this.A[164]; c0b5 = c0b5 ^ this.A[165]
+            c0b6 = c0b6 ^ this.A[166]; c0b7 = c0b7 ^ this.A[167]
+            c1b0 = c1b0 ^ this.A[168]; c1b1 = c1b1 ^ this.A[169]
+            c1b2 = c1b2 ^ this.A[170]; c1b3 = c1b3 ^ this.A[171]
+            c1b4 = c1b4 ^ this.A[172]; c1b5 = c1b5 ^ this.A[173]
+            c1b6 = c1b6 ^ this.A[174]; c1b7 = c1b7 ^ this.A[175]
+            c2b0 = c2b0 ^ this.A[176]; c2b1 = c2b1 ^ this.A[177]
+            c2b2 = c2b2 ^ this.A[178]; c2b3 = c2b3 ^ this.A[179]
+            c2b4 = c2b4 ^ this.A[180]; c2b5 = c2b5 ^ this.A[181]
+            c2b6 = c2b6 ^ this.A[182]; c2b7 = c2b7 ^ this.A[183]
+            c3b0 = c3b0 ^ this.A[184]; c3b1 = c3b1 ^ this.A[185]
+            c3b2 = c3b2 ^ this.A[186]; c3b3 = c3b3 ^ this.A[187]
+            c3b4 = c3b4 ^ this.A[188]; c3b5 = c3b5 ^ this.A[189]
+            c3b6 = c3b6 ^ this.A[190]; c3b7 = c3b7 ^ this.A[191]
+            c4b0 = c4b0 ^ this.A[192]; c4b1 = c4b1 ^ this.A[193]
+            c4b2 = c4b2 ^ this.A[194]; c4b3 = c4b3 ^ this.A[195]
+            c4b4 = c4b4 ^ this.A[196]; c4b5 = c4b5 ^ this.A[197]
+            c4b6 = c4b6 ^ this.A[198]; c4b7 = c4b7 ^ this.A[199]
+
+            // D[x] = C[(x-1+5)%5] XOR Rotl1(C[(x+1)%5])
+            // Rotl1 of LE 64-bit word = left-rotate by 1 bit = each byte's bits shift left 1,
+            // with carry from previous byte; b0 carries from b7.
+            var r1c1: byte[8] = this.RotlLE1(c1b0, c1b1, c1b2, c1b3, c1b4, c1b5, c1b6, c1b7)
+            var r1c1b0: byte = r1c1[0]; var r1c1b1: byte = r1c1[1]; var r1c1b2: byte = r1c1[2]; var r1c1b3: byte = r1c1[3]
+            var r1c1b4: byte = r1c1[4]; var r1c1b5: byte = r1c1[5]; var r1c1b6: byte = r1c1[6]; var r1c1b7: byte = r1c1[7]
+            var r1c2: byte[8] = this.RotlLE1(c2b0, c2b1, c2b2, c2b3, c2b4, c2b5, c2b6, c2b7)
+            var r1c2b0: byte = r1c2[0]; var r1c2b1: byte = r1c2[1]; var r1c2b2: byte = r1c2[2]; var r1c2b3: byte = r1c2[3]
+            var r1c2b4: byte = r1c2[4]; var r1c2b5: byte = r1c2[5]; var r1c2b6: byte = r1c2[6]; var r1c2b7: byte = r1c2[7]
+            var r1c3: byte[8] = this.RotlLE1(c3b0, c3b1, c3b2, c3b3, c3b4, c3b5, c3b6, c3b7)
+            var r1c3b0: byte = r1c3[0]; var r1c3b1: byte = r1c3[1]; var r1c3b2: byte = r1c3[2]; var r1c3b3: byte = r1c3[3]
+            var r1c3b4: byte = r1c3[4]; var r1c3b5: byte = r1c3[5]; var r1c3b6: byte = r1c3[6]; var r1c3b7: byte = r1c3[7]
+            var r1c4: byte[8] = this.RotlLE1(c4b0, c4b1, c4b2, c4b3, c4b4, c4b5, c4b6, c4b7)
+            var r1c4b0: byte = r1c4[0]; var r1c4b1: byte = r1c4[1]; var r1c4b2: byte = r1c4[2]; var r1c4b3: byte = r1c4[3]
+            var r1c4b4: byte = r1c4[4]; var r1c4b5: byte = r1c4[5]; var r1c4b6: byte = r1c4[6]; var r1c4b7: byte = r1c4[7]
+            var r1c0: byte[8] = this.RotlLE1(c0b0, c0b1, c0b2, c0b3, c0b4, c0b5, c0b6, c0b7)
+            var r1c0b0: byte = r1c0[0]; var r1c0b1: byte = r1c0[1]; var r1c0b2: byte = r1c0[2]; var r1c0b3: byte = r1c0[3]
+            var r1c0b4: byte = r1c0[4]; var r1c0b5: byte = r1c0[5]; var r1c0b6: byte = r1c0[6]; var r1c0b7: byte = r1c0[7]
+
+            // D[0] = C[4] XOR Rotl1(C[1])
+            var d0b0: byte = c4b0 ^ r1c1b0; var d0b1: byte = c4b1 ^ r1c1b1
+            var d0b2: byte = c4b2 ^ r1c1b2; var d0b3: byte = c4b3 ^ r1c1b3
+            var d0b4: byte = c4b4 ^ r1c1b4; var d0b5: byte = c4b5 ^ r1c1b5
+            var d0b6: byte = c4b6 ^ r1c1b6; var d0b7: byte = c4b7 ^ r1c1b7
+            // D[1] = C[0] XOR Rotl1(C[2])
+            var d1b0: byte = c0b0 ^ r1c2b0; var d1b1: byte = c0b1 ^ r1c2b1
+            var d1b2: byte = c0b2 ^ r1c2b2; var d1b3: byte = c0b3 ^ r1c2b3
+            var d1b4: byte = c0b4 ^ r1c2b4; var d1b5: byte = c0b5 ^ r1c2b5
+            var d1b6: byte = c0b6 ^ r1c2b6; var d1b7: byte = c0b7 ^ r1c2b7
+            // D[2] = C[1] XOR Rotl1(C[3])
+            var d2b0: byte = c1b0 ^ r1c3b0; var d2b1: byte = c1b1 ^ r1c3b1
+            var d2b2: byte = c1b2 ^ r1c3b2; var d2b3: byte = c1b3 ^ r1c3b3
+            var d2b4: byte = c1b4 ^ r1c3b4; var d2b5: byte = c1b5 ^ r1c3b5
+            var d2b6: byte = c1b6 ^ r1c3b6; var d2b7: byte = c1b7 ^ r1c3b7
+            // D[3] = C[2] XOR Rotl1(C[4])
+            var d3b0: byte = c2b0 ^ r1c4b0; var d3b1: byte = c2b1 ^ r1c4b1
+            var d3b2: byte = c2b2 ^ r1c4b2; var d3b3: byte = c2b3 ^ r1c4b3
+            var d3b4: byte = c2b4 ^ r1c4b4; var d3b5: byte = c2b5 ^ r1c4b5
+            var d3b6: byte = c2b6 ^ r1c4b6; var d3b7: byte = c2b7 ^ r1c4b7
+            // D[4] = C[3] XOR Rotl1(C[0])
+            var d4b0: byte = c3b0 ^ r1c0b0; var d4b1: byte = c3b1 ^ r1c0b1
+            var d4b2: byte = c3b2 ^ r1c0b2; var d4b3: byte = c3b3 ^ r1c0b3
+            var d4b4: byte = c3b4 ^ r1c0b4; var d4b5: byte = c3b5 ^ r1c0b5
+            var d4b6: byte = c3b6 ^ r1c0b6; var d4b7: byte = c3b7 ^ r1c0b7
+
+            // Apply D[x] to all lanes in column x.
+            // Lane l (x = l%5). XOR each A[l*8+b] with d{l%5}_b{b}.
+            // x=0: lanes 0,5,10,15,20
+            // x=1: lanes 1,6,11,16,21
+            // x=2: lanes 2,7,12,17,22
+            // x=3: lanes 3,8,13,18,23
+            // x=4: lanes 4,9,14,19,24
+            for (var ll = 0; ll < 25; ll++)
+            {
+                var lx: int = ll % 5
+                var lb: int = ll * 8
+                var lb0: int = lb;     var lb1: int = lb + 1; var lb2: int = lb + 2; var lb3: int = lb + 3
+                var lb4: int = lb + 4; var lb5: int = lb + 5; var lb6: int = lb + 6; var lb7: int = lb + 7
+                var old0: byte = this.A[lb0]; var old1: byte = this.A[lb1]
+                var old2: byte = this.A[lb2]; var old3: byte = this.A[lb3]
+                var old4: byte = this.A[lb4]; var old5: byte = this.A[lb5]
+                var old6: byte = this.A[lb6]; var old7: byte = this.A[lb7]
+                var db0: byte = d0b0; var db1: byte = d0b1; var db2: byte = d0b2; var db3: byte = d0b3
+                var db4: byte = d0b4; var db5: byte = d0b5; var db6: byte = d0b6; var db7: byte = d0b7
+                if (lx == 1) { db0 = d1b0; db1 = d1b1; db2 = d1b2; db3 = d1b3; db4 = d1b4; db5 = d1b5; db6 = d1b6; db7 = d1b7 }
+                elif (lx == 2) { db0 = d2b0; db1 = d2b1; db2 = d2b2; db3 = d2b3; db4 = d2b4; db5 = d2b5; db6 = d2b6; db7 = d2b7 }
+                elif (lx == 3) { db0 = d3b0; db1 = d3b1; db2 = d3b2; db3 = d3b3; db4 = d3b4; db5 = d3b5; db6 = d3b6; db7 = d3b7 }
+                elif (lx == 4) { db0 = d4b0; db1 = d4b1; db2 = d4b2; db3 = d4b3; db4 = d4b4; db5 = d4b5; db6 = d4b6; db7 = d4b7 }
+                var nx0: byte = old0 ^ db0; var nx1: byte = old1 ^ db1
+                var nx2: byte = old2 ^ db2; var nx3: byte = old3 ^ db3
+                var nx4: byte = old4 ^ db4; var nx5: byte = old5 ^ db5
+                var nx6: byte = old6 ^ db6; var nx7: byte = old7 ^ db7
+                this.A[lb0] = nx0; this.A[lb1] = nx1; this.A[lb2] = nx2; this.A[lb3] = nx3
+                this.A[lb4] = nx4; this.A[lb5] = nx5; this.A[lb6] = nx6; this.A[lb7] = nx7
+            }
+
+            // ----------------------------------------------------------------
+            // ρ (rho) + π (pi): combined into a single pass.
+            // B[y*5+x, rho_offset] = RotlLE(A[l], RHO[l])
+            // Then A[x*5 + ((2*x+3*y)%5)] = B[l] (pi shuffle)
+            //
+            // pi: new_A[y2*5+x2] = A[y*5+x] where (x2,y2) = (y, (2x+3y)%5)
+            // Combined: tmpB[y2*5+x2] = RotlLE(A[y*5+x], RHO[y*5+x])
+            // ----------------------------------------------------------------
+            var tmpB: byte[200]
+            for (var ll2 = 0; ll2 < 25; ll2++)
+            {
+                var lx2: int = ll2 % 5
+                var ly2: int = ll2 / 5
+                var lb8: int = ll2 * 8
+                var lb80: int = lb8;     var lb81: int = lb8 + 1; var lb82: int = lb8 + 2; var lb83: int = lb8 + 3
+                var lb84: int = lb8 + 4; var lb85: int = lb8 + 5; var lb86: int = lb8 + 6; var lb87: int = lb8 + 7
+                var aa0: byte = this.A[lb80]; var aa1: byte = this.A[lb81]
+                var aa2: byte = this.A[lb82]; var aa3: byte = this.A[lb83]
+                var aa4: byte = this.A[lb84]; var aa5: byte = this.A[lb85]
+                var aa6: byte = this.A[lb86]; var aa7: byte = this.A[lb87]
+                var rot: int = this.RHO[ll2]
+                var rotated: byte[8] = this.RotlLE(aa0, aa1, aa2, aa3, aa4, aa5, aa6, aa7, rot)
+                var rb0: byte = rotated[0]; var rb1: byte = rotated[1]
+                var rb2: byte = rotated[2]; var rb3: byte = rotated[3]
+                var rb4: byte = rotated[4]; var rb5: byte = rotated[5]
+                var rb6: byte = rotated[6]; var rb7: byte = rotated[7]
+                // π: destination lane = (lx2)*5 + ((2*lx2 + 3*ly2) % 5)
+                //                     x2 = ly2, y2 = (2*lx2 + 3*ly2) % 5
+                var destX: int = ly2
+                var destY: int = (2 * lx2 + 3 * ly2) % 5
+                var destL: int = destY * 5 + destX
+                var destB: int = destL * 8
+                var db0p: int = destB;     var db1p: int = destB + 1; var db2p: int = destB + 2; var db3p: int = destB + 3
+                var db4p: int = destB + 4; var db5p: int = destB + 5; var db6p: int = destB + 6; var db7p: int = destB + 7
+                tmpB[db0p] = rb0; tmpB[db1p] = rb1; tmpB[db2p] = rb2; tmpB[db3p] = rb3
+                tmpB[db4p] = rb4; tmpB[db5p] = rb5; tmpB[db6p] = rb6; tmpB[db7p] = rb7
+            }
+            // Copy tmpB -> this.A
+            for (var bi2 = 0; bi2 < 200; bi2++)
+            {
+                this.A[bi2] = tmpB[bi2]
+            }
+
+            // ----------------------------------------------------------------
+            // χ (chi): A[x,y] ^= (~A[x+1,y]) & A[x+2,y]  for each lane.
+            // ----------------------------------------------------------------
+            var chiA: byte[200]
+            for (var ly3 = 0; ly3 < 5; ly3++)
+            {
+                var ybase: int = ly3 * 5
+                var l0: int = (ybase + 0) * 8; var l1: int = (ybase + 1) * 8
+                var l2: int = (ybase + 2) * 8; var l3: int = (ybase + 3) * 8; var l4: int = (ybase + 4) * 8
+                var a0_0: byte = this.A[l0];     var a0_1: byte = this.A[l0 + 1]
+                var a0_2: byte = this.A[l0 + 2]; var a0_3: byte = this.A[l0 + 3]
+                var a0_4: byte = this.A[l0 + 4]; var a0_5: byte = this.A[l0 + 5]
+                var a0_6: byte = this.A[l0 + 6]; var a0_7: byte = this.A[l0 + 7]
+                var a1_0: byte = this.A[l1];     var a1_1: byte = this.A[l1 + 1]
+                var a1_2: byte = this.A[l1 + 2]; var a1_3: byte = this.A[l1 + 3]
+                var a1_4: byte = this.A[l1 + 4]; var a1_5: byte = this.A[l1 + 5]
+                var a1_6: byte = this.A[l1 + 6]; var a1_7: byte = this.A[l1 + 7]
+                var a2_0: byte = this.A[l2];     var a2_1: byte = this.A[l2 + 1]
+                var a2_2: byte = this.A[l2 + 2]; var a2_3: byte = this.A[l2 + 3]
+                var a2_4: byte = this.A[l2 + 4]; var a2_5: byte = this.A[l2 + 5]
+                var a2_6: byte = this.A[l2 + 6]; var a2_7: byte = this.A[l2 + 7]
+                var a3_0: byte = this.A[l3];     var a3_1: byte = this.A[l3 + 1]
+                var a3_2: byte = this.A[l3 + 2]; var a3_3: byte = this.A[l3 + 3]
+                var a3_4: byte = this.A[l3 + 4]; var a3_5: byte = this.A[l3 + 5]
+                var a3_6: byte = this.A[l3 + 6]; var a3_7: byte = this.A[l3 + 7]
+                var a4_0: byte = this.A[l4];     var a4_1: byte = this.A[l4 + 1]
+                var a4_2: byte = this.A[l4 + 2]; var a4_3: byte = this.A[l4 + 3]
+                var a4_4: byte = this.A[l4 + 4]; var a4_5: byte = this.A[l4 + 5]
+                var a4_6: byte = this.A[l4 + 6]; var a4_7: byte = this.A[l4 + 7]
+
+                // new[x] = a[x] XOR (~a[(x+1)%5] AND a[(x+2)%5])
+                // x=0: ~a1 AND a2
+                var t0_0: byte = (~a1_0) & a2_0; var t0_1: byte = (~a1_1) & a2_1
+                var t0_2: byte = (~a1_2) & a2_2; var t0_3: byte = (~a1_3) & a2_3
+                var t0_4: byte = (~a1_4) & a2_4; var t0_5: byte = (~a1_5) & a2_5
+                var t0_6: byte = (~a1_6) & a2_6; var t0_7: byte = (~a1_7) & a2_7
+                var chi0_0: byte = a0_0 ^ t0_0; var chi0_1: byte = a0_1 ^ t0_1
+                var chi0_2: byte = a0_2 ^ t0_2; var chi0_3: byte = a0_3 ^ t0_3
+                var chi0_4: byte = a0_4 ^ t0_4; var chi0_5: byte = a0_5 ^ t0_5
+                var chi0_6: byte = a0_6 ^ t0_6; var chi0_7: byte = a0_7 ^ t0_7
+
+                // x=1: ~a2 AND a3
+                var t1_0: byte = (~a2_0) & a3_0; var t1_1: byte = (~a2_1) & a3_1
+                var t1_2: byte = (~a2_2) & a3_2; var t1_3: byte = (~a2_3) & a3_3
+                var t1_4: byte = (~a2_4) & a3_4; var t1_5: byte = (~a2_5) & a3_5
+                var t1_6: byte = (~a2_6) & a3_6; var t1_7: byte = (~a2_7) & a3_7
+                var chi1_0: byte = a1_0 ^ t1_0; var chi1_1: byte = a1_1 ^ t1_1
+                var chi1_2: byte = a1_2 ^ t1_2; var chi1_3: byte = a1_3 ^ t1_3
+                var chi1_4: byte = a1_4 ^ t1_4; var chi1_5: byte = a1_5 ^ t1_5
+                var chi1_6: byte = a1_6 ^ t1_6; var chi1_7: byte = a1_7 ^ t1_7
+
+                // x=2: ~a3 AND a4
+                var t2_0: byte = (~a3_0) & a4_0; var t2_1: byte = (~a3_1) & a4_1
+                var t2_2: byte = (~a3_2) & a4_2; var t2_3: byte = (~a3_3) & a4_3
+                var t2_4: byte = (~a3_4) & a4_4; var t2_5: byte = (~a3_5) & a4_5
+                var t2_6: byte = (~a3_6) & a4_6; var t2_7: byte = (~a3_7) & a4_7
+                var chi2_0: byte = a2_0 ^ t2_0; var chi2_1: byte = a2_1 ^ t2_1
+                var chi2_2: byte = a2_2 ^ t2_2; var chi2_3: byte = a2_3 ^ t2_3
+                var chi2_4: byte = a2_4 ^ t2_4; var chi2_5: byte = a2_5 ^ t2_5
+                var chi2_6: byte = a2_6 ^ t2_6; var chi2_7: byte = a2_7 ^ t2_7
+
+                // x=3: ~a4 AND a0
+                var t3_0: byte = (~a4_0) & a0_0; var t3_1: byte = (~a4_1) & a0_1
+                var t3_2: byte = (~a4_2) & a0_2; var t3_3: byte = (~a4_3) & a0_3
+                var t3_4: byte = (~a4_4) & a0_4; var t3_5: byte = (~a4_5) & a0_5
+                var t3_6: byte = (~a4_6) & a0_6; var t3_7: byte = (~a4_7) & a0_7
+                var chi3_0: byte = a3_0 ^ t3_0; var chi3_1: byte = a3_1 ^ t3_1
+                var chi3_2: byte = a3_2 ^ t3_2; var chi3_3: byte = a3_3 ^ t3_3
+                var chi3_4: byte = a3_4 ^ t3_4; var chi3_5: byte = a3_5 ^ t3_5
+                var chi3_6: byte = a3_6 ^ t3_6; var chi3_7: byte = a3_7 ^ t3_7
+
+                // x=4: ~a0 AND a1
+                var t4_0: byte = (~a0_0) & a1_0; var t4_1: byte = (~a0_1) & a1_1
+                var t4_2: byte = (~a0_2) & a1_2; var t4_3: byte = (~a0_3) & a1_3
+                var t4_4: byte = (~a0_4) & a1_4; var t4_5: byte = (~a0_5) & a1_5
+                var t4_6: byte = (~a0_6) & a1_6; var t4_7: byte = (~a0_7) & a1_7
+                var chi4_0: byte = a4_0 ^ t4_0; var chi4_1: byte = a4_1 ^ t4_1
+                var chi4_2: byte = a4_2 ^ t4_2; var chi4_3: byte = a4_3 ^ t4_3
+                var chi4_4: byte = a4_4 ^ t4_4; var chi4_5: byte = a4_5 ^ t4_5
+                var chi4_6: byte = a4_6 ^ t4_6; var chi4_7: byte = a4_7 ^ t4_7
+
+                chiA[l0]     = chi0_0; chiA[l0 + 1] = chi0_1; chiA[l0 + 2] = chi0_2; chiA[l0 + 3] = chi0_3
+                chiA[l0 + 4] = chi0_4; chiA[l0 + 5] = chi0_5; chiA[l0 + 6] = chi0_6; chiA[l0 + 7] = chi0_7
+                chiA[l1]     = chi1_0; chiA[l1 + 1] = chi1_1; chiA[l1 + 2] = chi1_2; chiA[l1 + 3] = chi1_3
+                chiA[l1 + 4] = chi1_4; chiA[l1 + 5] = chi1_5; chiA[l1 + 6] = chi1_6; chiA[l1 + 7] = chi1_7
+                chiA[l2]     = chi2_0; chiA[l2 + 1] = chi2_1; chiA[l2 + 2] = chi2_2; chiA[l2 + 3] = chi2_3
+                chiA[l2 + 4] = chi2_4; chiA[l2 + 5] = chi2_5; chiA[l2 + 6] = chi2_6; chiA[l2 + 7] = chi2_7
+                chiA[l3]     = chi3_0; chiA[l3 + 1] = chi3_1; chiA[l3 + 2] = chi3_2; chiA[l3 + 3] = chi3_3
+                chiA[l3 + 4] = chi3_4; chiA[l3 + 5] = chi3_5; chiA[l3 + 6] = chi3_6; chiA[l3 + 7] = chi3_7
+                chiA[l4]     = chi4_0; chiA[l4 + 1] = chi4_1; chiA[l4 + 2] = chi4_2; chiA[l4 + 3] = chi4_3
+                chiA[l4 + 4] = chi4_4; chiA[l4 + 5] = chi4_5; chiA[l4 + 6] = chi4_6; chiA[l4 + 7] = chi4_7
+            }
+            for (var bi3 = 0; bi3 < 200; bi3++)
+            {
+                this.A[bi3] = chiA[bi3]
+            }
+
+            // ----------------------------------------------------------------
+            // ι (iota): XOR round constant into lane 0 (A[0..7]).
+            // ----------------------------------------------------------------
+            var rci0: byte = this.RC0[rnd]; var rci1: byte = this.RC1[rnd]
+            var rci2: byte = this.RC2[rnd]; var rci3: byte = this.RC3[rnd]
+            var rci4: byte = this.RC4[rnd]; var rci5: byte = this.RC5[rnd]
+            var rci6: byte = this.RC6[rnd]; var rci7: byte = this.RC7[rnd]
+            var oa0: byte = this.A[0]; var oa1: byte = this.A[1]; var oa2: byte = this.A[2]; var oa3: byte = this.A[3]
+            var oa4: byte = this.A[4]; var oa5: byte = this.A[5]; var oa6: byte = this.A[6]; var oa7: byte = this.A[7]
+            var na0: byte = oa0 ^ rci0; var na1: byte = oa1 ^ rci1
+            var na2: byte = oa2 ^ rci2; var na3: byte = oa3 ^ rci3
+            var na4: byte = oa4 ^ rci4; var na5: byte = oa5 ^ rci5
+            var na6: byte = oa6 ^ rci6; var na7: byte = oa7 ^ rci7
+            this.A[0] = na0; this.A[1] = na1; this.A[2] = na2; this.A[3] = na3
+            this.A[4] = na4; this.A[5] = na5; this.A[6] = na6; this.A[7] = na7
+        }
+    }
+
+    // GetByte: read one byte from the state.
+    public fn GetByte(idx: int) byte
+    {
+        return this.A[idx]
+    }
+
+    // -----------------------------------------------------------------------
+    // Private helpers
+    // -----------------------------------------------------------------------
+
+    // RotlLE1: rotate a 64-bit LE word left by 1 bit.
+    // LE: b0 = LSByte.  Left rotation by 1: each byte's MSB goes to next byte's LSB.
+    // b0_new = (b0 << 1) | (b7 >> 7)  (carry from b7's MSB wraps to b0's LSB)
+    // In byte arithmetic (b0 = LSByte, b7 = MSByte):
+    // Actually for LE rotation left by 1 bit:
+    //   bit[k] -> bit[k+1], bit[63] -> bit[0]
+    //   In bytes: each byte's MSBit (bit 7) feeds the LSBit of the next byte.
+    //   b0_new = (b0 * 2) % 256 + (b7 / 128)    (b7's bit 7 wraps to b0's bit 0)
+    //   b1_new = (b1 * 2) % 256 + (b0 / 128)
+    //   ...
+    //   b7_new = (b7 * 2) % 256 + (b6 / 128)
+    fn RotlLE1(b0: byte, b1: byte, b2: byte, b3: byte, b4: byte, b5: byte, b6: byte, b7: byte) byte[8]
+    {
+        var b0i: int = b0 as int; var b1i: int = b1 as int; var b2i: int = b2 as int; var b3i: int = b3 as int
+        var b4i: int = b4 as int; var b5i: int = b5 as int; var b6i: int = b6 as int; var b7i: int = b7 as int
+        var d0i: int = (b0i * 2) % 256 + b7i / 128
+        var d1i: int = (b1i * 2) % 256 + b0i / 128
+        var d2i: int = (b2i * 2) % 256 + b1i / 128
+        var d3i: int = (b3i * 2) % 256 + b2i / 128
+        var d4i: int = (b4i * 2) % 256 + b3i / 128
+        var d5i: int = (b5i * 2) % 256 + b4i / 128
+        var d6i: int = (b6i * 2) % 256 + b5i / 128
+        var d7i: int = (b7i * 2) % 256 + b6i / 128
+        var result: byte[8]
+        var r0: byte = d0i as byte; var r1: byte = d1i as byte; var r2: byte = d2i as byte; var r3: byte = d3i as byte
+        var r4: byte = d4i as byte; var r5: byte = d5i as byte; var r6: byte = d6i as byte; var r7: byte = d7i as byte
+        result[0] = r0; result[1] = r1; result[2] = r2; result[3] = r3
+        result[4] = r4; result[5] = r5; result[6] = r6; result[7] = r7
+        return result
+    }
+
+    // RotlLE: rotate a 64-bit LE word left by n bits (0 <= n <= 63).
+    // LE: b0 = LSByte, b7 = MSByte.
+    // Left rotation by n bits: equivalent to right rotation by (64-n).
+    // Byte-level: rotate bytes left by q = n/8 positions; then rotate bits left by r = n%8.
+    fn RotlLE(b0: byte, b1: byte, b2: byte, b3: byte, b4: byte, b5: byte, b6: byte, b7: byte, n: int) byte[8]
+    {
+        if (n == 0)
+        {
+            var result0: byte[8]
+            result0[0] = b0; result0[1] = b1; result0[2] = b2; result0[3] = b3
+            result0[4] = b4; result0[5] = b5; result0[6] = b6; result0[7] = b7
+            return result0
+        }
+
+        var qq: int = n / 8
+        var rr: int = n % 8
+
+        // Byte-level left rotation: c[k] = b[(k - qq + 8) % 8] for LE (b0=LSB)
+        // Rotate left means lower-index bytes move to higher-index (but circular).
+        // c0 = b[(0 - qq + 8) % 8], c1 = b[(1 - qq + 8) % 8], ...
+        var c0: byte = b0; var c1: byte = b1; var c2: byte = b2; var c3: byte = b3
+        var c4: byte = b4; var c5: byte = b5; var c6: byte = b6; var c7: byte = b7
+        if (qq == 1) { c0 = b7; c1 = b0; c2 = b1; c3 = b2; c4 = b3; c5 = b4; c6 = b5; c7 = b6 }
+        if (qq == 2) { c0 = b6; c1 = b7; c2 = b0; c3 = b1; c4 = b2; c5 = b3; c6 = b4; c7 = b5 }
+        if (qq == 3) { c0 = b5; c1 = b6; c2 = b7; c3 = b0; c4 = b1; c5 = b2; c6 = b3; c7 = b4 }
+        if (qq == 4) { c0 = b4; c1 = b5; c2 = b6; c3 = b7; c4 = b0; c5 = b1; c6 = b2; c7 = b3 }
+        if (qq == 5) { c0 = b3; c1 = b4; c2 = b5; c3 = b6; c4 = b7; c5 = b0; c6 = b1; c7 = b2 }
+        if (qq == 6) { c0 = b2; c1 = b3; c2 = b4; c3 = b5; c4 = b6; c5 = b7; c6 = b0; c7 = b1 }
+        if (qq == 7) { c0 = b1; c1 = b2; c2 = b3; c3 = b4; c4 = b5; c5 = b6; c6 = b7; c7 = b0 }
+
+        // Bit-level left rotation within each byte by rr bits.
+        // For LE: b0_new = (b0 << rr) | (b7 >> (8-rr)), etc.
+        // = (c_k * pow_r) % 256 + c_{k-1} / pow_8mr
+        // where pow_r = 2^rr, pow_8mr = 2^(8-rr)
+        var pow_r: int = 1
+        if (rr >= 1) { pow_r = 2 }
+        if (rr >= 2) { pow_r = 4 }
+        if (rr >= 3) { pow_r = 8 }
+        if (rr >= 4) { pow_r = 16 }
+        if (rr >= 5) { pow_r = 32 }
+        if (rr >= 6) { pow_r = 64 }
+        if (rr >= 7) { pow_r = 128 }
+        var pow_8mr: int = 256 / pow_r
+
+        var c0i: int = c0 as int; var c1i: int = c1 as int; var c2i: int = c2 as int; var c3i: int = c3 as int
+        var c4i: int = c4 as int; var c5i: int = c5 as int; var c6i: int = c6 as int; var c7i: int = c7 as int
+
+        // Left-rotate: each byte's MSBits go to the next byte's LSBits.
+        // d0 comes from c0 shifted left by rr and carry from c7 shifted right by (8-rr).
+        var d0i: int = (c0i * pow_r) % 256 + c7i / pow_8mr
+        var d1i: int = (c1i * pow_r) % 256 + c0i / pow_8mr
+        var d2i: int = (c2i * pow_r) % 256 + c1i / pow_8mr
+        var d3i: int = (c3i * pow_r) % 256 + c2i / pow_8mr
+        var d4i: int = (c4i * pow_r) % 256 + c3i / pow_8mr
+        var d5i: int = (c5i * pow_r) % 256 + c4i / pow_8mr
+        var d6i: int = (c6i * pow_r) % 256 + c5i / pow_8mr
+        var d7i: int = (c7i * pow_r) % 256 + c6i / pow_8mr
+
+        var result: byte[8]
+        var e0: byte = d0i as byte; var e1: byte = d1i as byte; var e2: byte = d2i as byte; var e3: byte = d3i as byte
+        var e4: byte = d4i as byte; var e5: byte = d5i as byte; var e6: byte = d6i as byte; var e7: byte = d7i as byte
+        result[0] = e0; result[1] = e1; result[2] = e2; result[3] = e3
+        result[4] = e4; result[5] = e5; result[6] = e6; result[7] = e7
+        return result
+    }
+}

@@ -1,0 +1,89 @@
+namespace Livt.Crypto.Hash
+using Livt.Crypto.Internal
+
+
+// SHA-3-256 (NIST FIPS 202) — Keccak-based hash, 256-bit output.
+//
+// Parameters: rate = 136 bytes, capacity = 64 bytes, output = 32 bytes.
+// Domain separation suffix: 0x06.
+//
+// Usage:
+//   1. Reset()                       — clear state for a new message
+//   2. ProcessBlock(msg: byte[136])  — absorb one rate-sized block (before padding)
+//      Repeat step 2 for each full 136-byte block.
+//   3. Finalize(lastBlock, lastLen)  — absorb the final partial block with padding
+//   4. GetDigest() byte[32]          — read first 32 bytes of squeezed output
+//
+// The caller must supply the final partial block (including the message bytes) and
+// the number of valid bytes in it. This component applies the SHA-3 domain suffix
+// 0x06 and the Keccak multi-rate padding (append 0x80 at byte position rate-1).
+component Sha3256
+{
+    public const BLOCK_SIZE:  int = 136  // rate = 1600 - 512 bits = 136 bytes
+    public const DIGEST_SIZE: int = 32
+
+    keccak: Keccak
+
+    new()
+    {
+        this.keccak = new Keccak()
+    }
+
+    // -----------------------------------------------------------------------
+    // Public API
+    // -----------------------------------------------------------------------
+
+    // Reset: initialise state for a new hash.
+    public fn Reset()
+    {
+        this.keccak.Reset()
+    }
+
+    // ProcessBlock: absorb one full 136-byte rate block.
+    public fn ProcessBlock(msg: byte[136])
+    {
+        var buf: byte[200]
+        for (var i = 0; i < 136; i++)
+        {
+            buf[i] = msg[i]
+        }
+        this.keccak.XorBytes(buf, 136)
+        this.keccak.Permute()
+    }
+
+    // Finalize: absorb the last partial block (lastLen bytes of lastBlock),
+    // apply SHA-3 padding (0x06 at lastLen, 0x80 at byte 135), then permute.
+    // lastLen must be in [0, 135].
+    public fn Finalize(lastBlock: byte[136], lastLen: int)
+    {
+        var buf: byte[200]
+        for (var i = 0; i < lastLen; i++)
+        {
+            buf[i] = lastBlock[i]
+        }
+        // SHA-3 domain suffix 0x06 immediately after last message byte.
+        buf[lastLen] = 0x06
+        // Keccak multi-rate padding: set MSbit of the last rate byte.
+        buf[135] = 0x80
+        // If lastLen == 135, bit 0x06 and 0x80 overlap at the same byte.
+        // XOR them together: 0x06 ^ 0x80 = 0x86.
+        if (lastLen == 135)
+        {
+            buf[135] = 0x86
+        }
+        this.keccak.XorBytes(buf, 136)
+        this.keccak.Permute()
+    }
+
+    // GetDigest: return first 32 bytes (256 bits) of state as digest.
+    public fn GetDigest() byte[32]
+    {
+        var digest: byte[32]
+        for (var i = 0; i < 32; i++)
+        {
+            var bi: byte = this.keccak.GetByte(i)
+            digest[i] = bi
+        }
+        return digest
+    }
+}

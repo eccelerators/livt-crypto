@@ -1,0 +1,431 @@
+namespace Livt.Crypto.Aes
+using Livt.Crypto.Internal
+
+
+component EncryptBlock256
+{
+    public const KEY_SIZE: int = 32
+    public const BLOCK_SIZE: int = 16
+
+    blk:       byte[16]
+    roundKeys: byte[240]
+
+    new() {}
+
+    // -----------------------------------------------------------------------
+    // Public API
+    // -----------------------------------------------------------------------
+
+    public fn SetKey(key: byte[32])
+    {
+        for (var ki = 0; ki < 32; ki++)
+        {
+            this.roundKeys[ki] = key[ki]
+        }
+
+        for (var wordIdx = 8; wordIdx < 60; wordIdx++)
+        {
+            var prevBase: int = (wordIdx - 1) * 4
+            var pb1: int = prevBase + 1
+            var pb2: int = prevBase + 2
+            var pb3: int = prevBase + 3
+            var t0: byte = this.roundKeys[prevBase]
+            var t1: byte = this.roundKeys[pb1]
+            var t2: byte = this.roundKeys[pb2]
+            var t3: byte = this.roundKeys[pb3]
+
+            var mod8: int = wordIdx % 8
+            if (mod8 == 0)
+            {
+                var r0: byte = AesSBox.Substitute(t1)
+                var r1: byte = AesSBox.Substitute(t2)
+                var r2: byte = AesSBox.Substitute(t3)
+                var r3: byte = AesSBox.Substitute(t0)
+                var rcIdx: int = wordIdx / 8
+                var rcon: byte = AesGfMath.GetRcon(rcIdx)
+                t0 = r0 ^ rcon
+                t1 = r1
+                t2 = r2
+                t3 = r3
+            }
+            elif (mod8 == 4)
+            {
+                var s0: byte = AesSBox.Substitute(t0)
+                var s1: byte = AesSBox.Substitute(t1)
+                var s2: byte = AesSBox.Substitute(t2)
+                var s3: byte = AesSBox.Substitute(t3)
+                t0 = s0
+                t1 = s1
+                t2 = s2
+                t3 = s3
+            }
+
+            var prevBase8: int = (wordIdx - 8) * 4
+            var p81: int = prevBase8 + 1
+            var p82: int = prevBase8 + 2
+            var p83: int = prevBase8 + 3
+            var w0: byte = this.roundKeys[prevBase8]
+            var w1: byte = this.roundKeys[p81]
+            var w2: byte = this.roundKeys[p82]
+            var w3: byte = this.roundKeys[p83]
+
+            var destBase: int = wordIdx * 4
+            var d1: int = destBase + 1
+            var d2: int = destBase + 2
+            var d3: int = destBase + 3
+
+            var rkd0: byte = t0 ^ w0
+            var rkd1: byte = t1 ^ w1
+            var rkd2: byte = t2 ^ w2
+            var rkd3: byte = t3 ^ w3
+            this.roundKeys[destBase] = rkd0
+            this.roundKeys[d1] = rkd1
+            this.roundKeys[d2] = rkd2
+            this.roundKeys[d3] = rkd3
+        }
+    }
+
+    public fn LoadBlock(block: byte[16])
+    {
+        state {
+            this.blk[0]  = block[0]
+            this.blk[1]  = block[1]
+            this.blk[2]  = block[2]
+            this.blk[3]  = block[3]
+            this.blk[4]  = block[4]
+            this.blk[5]  = block[5]
+            this.blk[6]  = block[6]
+            this.blk[7]  = block[7]
+            this.blk[8]  = block[8]
+            this.blk[9]  = block[9]
+            this.blk[10] = block[10]
+            this.blk[11] = block[11]
+            this.blk[12] = block[12]
+            this.blk[13] = block[13]
+            this.blk[14] = block[14]
+            this.blk[15] = block[15]
+        }
+    }
+
+    public fn EncryptBlock()
+    {
+        this.ApplyRoundKey(0)
+
+        var round: int = 1
+        while (round < 14)
+        {
+            this.SubBytes()
+            this.ShiftRows()
+            this.MixColumns()
+            this.ApplyRoundKey(round)
+            round++
+        }
+
+        this.SubBytes()
+        this.ShiftRows()
+        this.ApplyRoundKey(14)
+    }
+
+    public fn GetBlock() byte[16]
+    {
+        return this.blk
+    }
+
+    public fn GetByte(idx: int) byte
+    {
+        return this.blk[idx]
+    }
+
+    public fn ClearKey()
+    {
+        for (var i = 0; i < 240; i++)
+        {
+            this.roundKeys[i] = 0x00
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Private round operations (same-component calls, zero cross-component overhead)
+    // -----------------------------------------------------------------------
+
+    fn SubBytes()
+    {
+        state {
+        var bsb0:  byte = this.blk[0]
+        var bsb1:  byte = this.blk[1]
+        var bsb2:  byte = this.blk[2]
+        var bsb3:  byte = this.blk[3]
+        var bsb4:  byte = this.blk[4]
+        var bsb5:  byte = this.blk[5]
+        var bsb6:  byte = this.blk[6]
+        var bsb7:  byte = this.blk[7]
+        var bsb8:  byte = this.blk[8]
+        var bsb9:  byte = this.blk[9]
+        var bsb10: byte = this.blk[10]
+        var bsb11: byte = this.blk[11]
+        var bsb12: byte = this.blk[12]
+        var bsb13: byte = this.blk[13]
+        var bsb14: byte = this.blk[14]
+        var bsb15: byte = this.blk[15]
+        var r0:  byte = AesSBox.Substitute(bsb0)
+        var r1:  byte = AesSBox.Substitute(bsb1)
+        var r2:  byte = AesSBox.Substitute(bsb2)
+        var r3:  byte = AesSBox.Substitute(bsb3)
+        var r4:  byte = AesSBox.Substitute(bsb4)
+        var r5:  byte = AesSBox.Substitute(bsb5)
+        var r6:  byte = AesSBox.Substitute(bsb6)
+        var r7:  byte = AesSBox.Substitute(bsb7)
+        var r8:  byte = AesSBox.Substitute(bsb8)
+        var r9:  byte = AesSBox.Substitute(bsb9)
+        var r10: byte = AesSBox.Substitute(bsb10)
+        var r11: byte = AesSBox.Substitute(bsb11)
+        var r12: byte = AesSBox.Substitute(bsb12)
+        var r13: byte = AesSBox.Substitute(bsb13)
+        var r14: byte = AesSBox.Substitute(bsb14)
+        var r15: byte = AesSBox.Substitute(bsb15)
+        this.blk[0]  = r0
+        this.blk[1]  = r1
+        this.blk[2]  = r2
+        this.blk[3]  = r3
+        this.blk[4]  = r4
+        this.blk[5]  = r5
+        this.blk[6]  = r6
+        this.blk[7]  = r7
+        this.blk[8]  = r8
+        this.blk[9]  = r9
+        this.blk[10] = r10
+        this.blk[11] = r11
+        this.blk[12] = r12
+        this.blk[13] = r13
+        this.blk[14] = r14
+        this.blk[15] = r15
+        }
+    }
+
+    fn ShiftRows()
+    {
+        state {
+        var c00: byte = this.blk[0]
+        var c01: byte = this.blk[4]
+        var c02: byte = this.blk[8]
+        var c03: byte = this.blk[12]
+        var r10: byte = this.blk[1]
+        var r11: byte = this.blk[5]
+        var r12: byte = this.blk[9]
+        var r13: byte = this.blk[13]
+        var r20: byte = this.blk[2]
+        var r21: byte = this.blk[6]
+        var r22: byte = this.blk[10]
+        var r23: byte = this.blk[14]
+        var r30: byte = this.blk[3]
+        var r31: byte = this.blk[7]
+        var r32: byte = this.blk[11]
+        var r33: byte = this.blk[15]
+        this.blk[0]  = c00
+        this.blk[4]  = c01
+        this.blk[8]  = c02
+        this.blk[12] = c03
+        this.blk[1]  = r11
+        this.blk[5]  = r12
+        this.blk[9]  = r13
+        this.blk[13] = r10
+        this.blk[2]  = r22
+        this.blk[6]  = r23
+        this.blk[10] = r20
+        this.blk[14] = r21
+        this.blk[3]  = r33
+        this.blk[7]  = r30
+        this.blk[11] = r31
+        this.blk[15] = r32
+        }
+    }
+
+    fn MixColumns()
+    {
+        state {
+        var bm0:  byte = this.blk[0]
+        var bm1:  byte = this.blk[1]
+        var bm2:  byte = this.blk[2]
+        var bm3:  byte = this.blk[3]
+        var bm4:  byte = this.blk[4]
+        var bm5:  byte = this.blk[5]
+        var bm6:  byte = this.blk[6]
+        var bm7:  byte = this.blk[7]
+        var bm8:  byte = this.blk[8]
+        var bm9:  byte = this.blk[9]
+        var bm10: byte = this.blk[10]
+        var bm11: byte = this.blk[11]
+        var bm12: byte = this.blk[12]
+        var bm13: byte = this.blk[13]
+        var bm14: byte = this.blk[14]
+        var bm15: byte = this.blk[15]
+        var m2c00: byte = AesGfMath.Mul2(bm0)
+        var m3c00: byte = AesGfMath.Mul3(bm0)
+        var m2c10: byte = AesGfMath.Mul2(bm1)
+        var m3c10: byte = AesGfMath.Mul3(bm1)
+        var m2c20: byte = AesGfMath.Mul2(bm2)
+        var m3c20: byte = AesGfMath.Mul3(bm2)
+        var m2c30: byte = AesGfMath.Mul2(bm3)
+        var m3c30: byte = AesGfMath.Mul3(bm3)
+        var n0ac0: byte = m2c00 ^ m3c10
+        var n0bc0: byte = bm2 ^ bm3
+        var new0c0: byte = n0ac0 ^ n0bc0
+        var n1ac0: byte = bm0 ^ m2c10
+        var n1bc0: byte = m3c20 ^ bm3
+        var new1c0: byte = n1ac0 ^ n1bc0
+        var n2ac0: byte = bm0 ^ bm1
+        var n2bc0: byte = m2c20 ^ m3c30
+        var new2c0: byte = n2ac0 ^ n2bc0
+        var n3ac0: byte = m3c00 ^ bm1
+        var n3bc0: byte = bm2 ^ m2c30
+        var new3c0: byte = n3ac0 ^ n3bc0
+        var m2c01: byte = AesGfMath.Mul2(bm4)
+        var m3c01: byte = AesGfMath.Mul3(bm4)
+        var m2c11: byte = AesGfMath.Mul2(bm5)
+        var m3c11: byte = AesGfMath.Mul3(bm5)
+        var m2c21: byte = AesGfMath.Mul2(bm6)
+        var m3c21: byte = AesGfMath.Mul3(bm6)
+        var m2c31: byte = AesGfMath.Mul2(bm7)
+        var m3c31: byte = AesGfMath.Mul3(bm7)
+        var n0ac1: byte = m2c01 ^ m3c11
+        var n0bc1: byte = bm6 ^ bm7
+        var new0c1: byte = n0ac1 ^ n0bc1
+        var n1ac1: byte = bm4 ^ m2c11
+        var n1bc1: byte = m3c21 ^ bm7
+        var new1c1: byte = n1ac1 ^ n1bc1
+        var n2ac1: byte = bm4 ^ bm5
+        var n2bc1: byte = m2c21 ^ m3c31
+        var new2c1: byte = n2ac1 ^ n2bc1
+        var n3ac1: byte = m3c01 ^ bm5
+        var n3bc1: byte = bm6 ^ m2c31
+        var new3c1: byte = n3ac1 ^ n3bc1
+        var m2c02: byte = AesGfMath.Mul2(bm8)
+        var m3c02: byte = AesGfMath.Mul3(bm8)
+        var m2c12: byte = AesGfMath.Mul2(bm9)
+        var m3c12: byte = AesGfMath.Mul3(bm9)
+        var m2c22: byte = AesGfMath.Mul2(bm10)
+        var m3c22: byte = AesGfMath.Mul3(bm10)
+        var m2c32: byte = AesGfMath.Mul2(bm11)
+        var m3c32: byte = AesGfMath.Mul3(bm11)
+        var n0ac2: byte = m2c02 ^ m3c12
+        var n0bc2: byte = bm10 ^ bm11
+        var new0c2: byte = n0ac2 ^ n0bc2
+        var n1ac2: byte = bm8 ^ m2c12
+        var n1bc2: byte = m3c22 ^ bm11
+        var new1c2: byte = n1ac2 ^ n1bc2
+        var n2ac2: byte = bm8 ^ bm9
+        var n2bc2: byte = m2c22 ^ m3c32
+        var new2c2: byte = n2ac2 ^ n2bc2
+        var n3ac2: byte = m3c02 ^ bm9
+        var n3bc2: byte = bm10 ^ m2c32
+        var new3c2: byte = n3ac2 ^ n3bc2
+        var m2c03: byte = AesGfMath.Mul2(bm12)
+        var m3c03: byte = AesGfMath.Mul3(bm12)
+        var m2c13: byte = AesGfMath.Mul2(bm13)
+        var m3c13: byte = AesGfMath.Mul3(bm13)
+        var m2c23: byte = AesGfMath.Mul2(bm14)
+        var m3c23: byte = AesGfMath.Mul3(bm14)
+        var m2c33: byte = AesGfMath.Mul2(bm15)
+        var m3c33: byte = AesGfMath.Mul3(bm15)
+        var n0ac3: byte = m2c03 ^ m3c13
+        var n0bc3: byte = bm14 ^ bm15
+        var new0c3: byte = n0ac3 ^ n0bc3
+        var n1ac3: byte = bm12 ^ m2c13
+        var n1bc3: byte = m3c23 ^ bm15
+        var new1c3: byte = n1ac3 ^ n1bc3
+        var n2ac3: byte = bm12 ^ bm13
+        var n2bc3: byte = m2c23 ^ m3c33
+        var new2c3: byte = n2ac3 ^ n2bc3
+        var n3ac3: byte = m3c03 ^ bm13
+        var n3bc3: byte = bm14 ^ m2c33
+        var new3c3: byte = n3ac3 ^ n3bc3
+        this.blk[0]  = new0c0
+        this.blk[1]  = new1c0
+        this.blk[2]  = new2c0
+        this.blk[3]  = new3c0
+        this.blk[4]  = new0c1
+        this.blk[5]  = new1c1
+        this.blk[6]  = new2c1
+        this.blk[7]  = new3c1
+        this.blk[8]  = new0c2
+        this.blk[9]  = new1c2
+        this.blk[10] = new2c2
+        this.blk[11] = new3c2
+        this.blk[12] = new0c3
+        this.blk[13] = new1c3
+        this.blk[14] = new2c3
+        this.blk[15] = new3c3
+        }
+    }
+
+    fn ApplyRoundKey(round: int)
+    {
+        state {
+        var base: int = round * 16
+        var ki1:  int = base + 1
+        var ki2:  int = base + 2
+        var ki3:  int = base + 3
+        var ki4:  int = base + 4
+        var ki5:  int = base + 5
+        var ki6:  int = base + 6
+        var ki7:  int = base + 7
+        var ki8:  int = base + 8
+        var ki9:  int = base + 9
+        var ki10: int = base + 10
+        var ki11: int = base + 11
+        var ki12: int = base + 12
+        var ki13: int = base + 13
+        var ki14: int = base + 14
+        var ki15: int = base + 15
+        var bk0:  byte = this.blk[0]
+        var bk1:  byte = this.blk[1]
+        var bk2:  byte = this.blk[2]
+        var bk3:  byte = this.blk[3]
+        var bk4:  byte = this.blk[4]
+        var bk5:  byte = this.blk[5]
+        var bk6:  byte = this.blk[6]
+        var bk7:  byte = this.blk[7]
+        var bk8:  byte = this.blk[8]
+        var bk9:  byte = this.blk[9]
+        var bk10: byte = this.blk[10]
+        var bk11: byte = this.blk[11]
+        var bk12: byte = this.blk[12]
+        var bk13: byte = this.blk[13]
+        var bk14: byte = this.blk[14]
+        var bk15: byte = this.blk[15]
+        var k0:  byte = this.roundKeys[base]
+        var k1:  byte = this.roundKeys[ki1]
+        var k2:  byte = this.roundKeys[ki2]
+        var k3:  byte = this.roundKeys[ki3]
+        var k4:  byte = this.roundKeys[ki4]
+        var k5:  byte = this.roundKeys[ki5]
+        var k6:  byte = this.roundKeys[ki6]
+        var k7:  byte = this.roundKeys[ki7]
+        var k8:  byte = this.roundKeys[ki8]
+        var k9:  byte = this.roundKeys[ki9]
+        var k10: byte = this.roundKeys[ki10]
+        var k11: byte = this.roundKeys[ki11]
+        var k12: byte = this.roundKeys[ki12]
+        var k13: byte = this.roundKeys[ki13]
+        var k14: byte = this.roundKeys[ki14]
+        var k15: byte = this.roundKeys[ki15]
+        this.blk[0]  = bk0  ^ k0
+        this.blk[1]  = bk1  ^ k1
+        this.blk[2]  = bk2  ^ k2
+        this.blk[3]  = bk3  ^ k3
+        this.blk[4]  = bk4  ^ k4
+        this.blk[5]  = bk5  ^ k5
+        this.blk[6]  = bk6  ^ k6
+        this.blk[7]  = bk7  ^ k7
+        this.blk[8]  = bk8  ^ k8
+        this.blk[9]  = bk9  ^ k9
+        this.blk[10] = bk10 ^ k10
+        this.blk[11] = bk11 ^ k11
+        this.blk[12] = bk12 ^ k12
+        this.blk[13] = bk13 ^ k13
+        this.blk[14] = bk14 ^ k14
+        this.blk[15] = bk15 ^ k15
+        }
+    }
+
+}

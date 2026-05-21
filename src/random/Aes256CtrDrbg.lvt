@@ -1,0 +1,388 @@
+namespace Livt.Crypto.Random
+using Livt.Crypto.Aes
+
+
+// CTR_DRBG instantiated with AES-256, no derivation function, no prediction resistance.
+// Implements NIST SP 800-90A §10.2.
+// seedlen = keylen + blocklen = 32 + 16 = 48 bytes.
+//
+// Usage:
+//   1. Instantiate(entropy[48]) — seed the DRBG (key=0, V=0, then CTR_DRBG_Update(entropy)).
+//   2. GenerateBlock() — produce one 16-byte output block; call repeatedly for more output.
+//   3. FinalizeGenerate() — call after all blocks for one Generate request are done;
+//                           runs CTR_DRBG_Update(0^48) to refresh state.
+//   Reseed(entropy[48]) — refresh internal state from new entropy at any time.
+component Aes256CtrDrbg
+{
+    public const SEED_SIZE:  int = 48
+    public const KEY_SIZE:   int = 32
+    public const BLOCK_SIZE: int = 16
+
+    enc:    EncryptBlock256
+
+    // V counter: 128-bit big-endian integer. Stored as byte-wide int values
+    // so carry propagation can use simple integer arithmetic.
+    v: int[16]
+
+    // Output buffer for the most recent GenerateBlock() call.
+    outBlk: byte[16]
+
+    new()
+    {
+        this.enc = new EncryptBlock256()
+    }
+
+    // -----------------------------------------------------------------------
+    // Public API
+    // -----------------------------------------------------------------------
+
+    // Instantiate: set key=0^32, V=0^16, then run CTR_DRBG_Update(entropy).
+    // entropy must be exactly 48 bytes (SEED_SIZE).
+    public fn Instantiate(entropy: byte[48])
+    {
+        var zk: byte[32] = [
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+        this.enc.SetKey(zk)
+        for (var vi = 0; vi < 16; vi++)
+        {
+            this.v[vi] = 0
+        }
+        this.Update(entropy)
+    }
+
+    // GenerateBlock: increment V, encrypt V under the current key, store result in outBlk.
+    // Call FinalizeGenerate() after all blocks for one Generate request are done.
+    public fn GenerateBlock()
+    {
+        this.IncrV()
+        var cb: byte[16]
+        for (var ci = 0; ci < 16; ci++)
+        {
+            cb[ci] = this.v[ci] as byte
+        }
+        this.enc.LoadBlock(cb)
+        this.enc.EncryptBlock()
+        var result: byte[16] = this.enc.GetBlock()
+        for (var i = 0; i < 16; i++)
+        {
+            this.outBlk[i] = result[i]
+        }
+    }
+
+    // FinalizeGenerate: run CTR_DRBG_Update(0^48) after all output blocks are generated.
+    // Must be called once per logical Generate request.
+    public fn FinalizeGenerate()
+    {
+        var zeros: byte[48] = [
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+        this.Update(zeros)
+    }
+
+    // Reseed: run CTR_DRBG_Update(entropy) to refresh the internal state.
+    // entropy must be exactly 48 bytes (SEED_SIZE).
+    public fn Reseed(entropy: byte[48])
+    {
+        this.Update(entropy)
+    }
+
+    public fn GetBlock() byte[16]
+    {
+        return this.outBlk
+    }
+
+    public fn GetByte(idx: int) byte
+    {
+        return this.outBlk[idx]
+    }
+
+    public fn ClearKey()
+    {
+        this.enc.ClearKey()
+    }
+
+    // -----------------------------------------------------------------------
+    // Private helpers
+    // -----------------------------------------------------------------------
+
+    // CTR_DRBG_Update per NIST SP 800-90A §10.2.1.2 (no DF variant).
+    // Generates 3 AES blocks by encrypting V+1, V+2, V+3 with the current key,
+    // XORs the 48 bytes with data, then sets:
+    //   new key = XOR result bytes  0..31
+    //   new V   = XOR result bytes 32..47
+    fn Update(data: byte[48])
+    {
+        // Block T0: encrypt V+1
+        this.IncrV()
+        var cb0: byte[16]
+        for (var c0i = 0; c0i < 16; c0i++)
+        {
+            cb0[c0i] = this.v[c0i] as byte
+        }
+        this.enc.LoadBlock(cb0)
+        this.enc.EncryptBlock()
+        var t0: byte[16] = this.enc.GetBlock()
+
+        // Block T1: encrypt V+2
+        this.IncrV()
+        var cb1: byte[16]
+        for (var c1i = 0; c1i < 16; c1i++)
+        {
+            cb1[c1i] = this.v[c1i] as byte
+        }
+        this.enc.LoadBlock(cb1)
+        this.enc.EncryptBlock()
+        var t1: byte[16] = this.enc.GetBlock()
+
+        // Block T2: encrypt V+3
+        this.IncrV()
+        var cb2: byte[16]
+        for (var c2i = 0; c2i < 16; c2i++)
+        {
+            cb2[c2i] = this.v[c2i] as byte
+        }
+        this.enc.LoadBlock(cb2)
+        this.enc.EncryptBlock()
+        var t2: byte[16] = this.enc.GetBlock()
+
+        // Read all 48 data bytes into locals.
+        var d0:  byte = data[0];  var d1:  byte = data[1];  var d2:  byte = data[2];  var d3:  byte = data[3]
+        var d4:  byte = data[4];  var d5:  byte = data[5];  var d6:  byte = data[6];  var d7:  byte = data[7]
+        var d8:  byte = data[8];  var d9:  byte = data[9];  var d10: byte = data[10]; var d11: byte = data[11]
+        var d12: byte = data[12]; var d13: byte = data[13]; var d14: byte = data[14]; var d15: byte = data[15]
+        var d16: byte = data[16]; var d17: byte = data[17]; var d18: byte = data[18]; var d19: byte = data[19]
+        var d20: byte = data[20]; var d21: byte = data[21]; var d22: byte = data[22]; var d23: byte = data[23]
+        var d24: byte = data[24]; var d25: byte = data[25]; var d26: byte = data[26]; var d27: byte = data[27]
+        var d28: byte = data[28]; var d29: byte = data[29]; var d30: byte = data[30]; var d31: byte = data[31]
+        var d32: byte = data[32]; var d33: byte = data[33]; var d34: byte = data[34]; var d35: byte = data[35]
+        var d36: byte = data[36]; var d37: byte = data[37]; var d38: byte = data[38]; var d39: byte = data[39]
+        var d40: byte = data[40]; var d41: byte = data[41]; var d42: byte = data[42]; var d43: byte = data[43]
+        var d44: byte = data[44]; var d45: byte = data[45]; var d46: byte = data[46]; var d47: byte = data[47]
+
+        // Read t0 bytes into locals.
+        var t0b0:  byte = t0[0];  var t0b1:  byte = t0[1];  var t0b2:  byte = t0[2];  var t0b3:  byte = t0[3]
+        var t0b4:  byte = t0[4];  var t0b5:  byte = t0[5];  var t0b6:  byte = t0[6];  var t0b7:  byte = t0[7]
+        var t0b8:  byte = t0[8];  var t0b9:  byte = t0[9];  var t0b10: byte = t0[10]; var t0b11: byte = t0[11]
+        var t0b12: byte = t0[12]; var t0b13: byte = t0[13]; var t0b14: byte = t0[14]; var t0b15: byte = t0[15]
+
+        // Read t1 bytes into locals.
+        var t1b0:  byte = t1[0];  var t1b1:  byte = t1[1];  var t1b2:  byte = t1[2];  var t1b3:  byte = t1[3]
+        var t1b4:  byte = t1[4];  var t1b5:  byte = t1[5];  var t1b6:  byte = t1[6];  var t1b7:  byte = t1[7]
+        var t1b8:  byte = t1[8];  var t1b9:  byte = t1[9];  var t1b10: byte = t1[10]; var t1b11: byte = t1[11]
+        var t1b12: byte = t1[12]; var t1b13: byte = t1[13]; var t1b14: byte = t1[14]; var t1b15: byte = t1[15]
+
+        // Read t2 bytes into locals.
+        var t2b0:  byte = t2[0];  var t2b1:  byte = t2[1];  var t2b2:  byte = t2[2];  var t2b3:  byte = t2[3]
+        var t2b4:  byte = t2[4];  var t2b5:  byte = t2[5];  var t2b6:  byte = t2[6];  var t2b7:  byte = t2[7]
+        var t2b8:  byte = t2[8];  var t2b9:  byte = t2[9];  var t2b10: byte = t2[10]; var t2b11: byte = t2[11]
+        var t2b12: byte = t2[12]; var t2b13: byte = t2[13]; var t2b14: byte = t2[14]; var t2b15: byte = t2[15]
+
+        // New key = (t0 || t1) XOR data[0..31]
+        var nk0:  byte = d0 ^ t0b0
+        var nk1:  byte = d1 ^ t0b1
+        var nk2:  byte = d2 ^ t0b2
+        var nk3:  byte = d3 ^ t0b3
+        var nk4:  byte = d4 ^ t0b4
+        var nk5:  byte = d5 ^ t0b5
+        var nk6:  byte = d6 ^ t0b6
+        var nk7:  byte = d7 ^ t0b7
+        var nk8:  byte = d8 ^ t0b8
+        var nk9:  byte = d9 ^ t0b9
+        var nk10: byte = d10 ^ t0b10
+        var nk11: byte = d11 ^ t0b11
+        var nk12: byte = d12 ^ t0b12
+        var nk13: byte = d13 ^ t0b13
+        var nk14: byte = d14 ^ t0b14
+        var nk15: byte = d15 ^ t0b15
+        var nk16: byte = d16 ^ t1b0
+        var nk17: byte = d17 ^ t1b1
+        var nk18: byte = d18 ^ t1b2
+        var nk19: byte = d19 ^ t1b3
+        var nk20: byte = d20 ^ t1b4
+        var nk21: byte = d21 ^ t1b5
+        var nk22: byte = d22 ^ t1b6
+        var nk23: byte = d23 ^ t1b7
+        var nk24: byte = d24 ^ t1b8
+        var nk25: byte = d25 ^ t1b9
+        var nk26: byte = d26 ^ t1b10
+        var nk27: byte = d27 ^ t1b11
+        var nk28: byte = d28 ^ t1b12
+        var nk29: byte = d29 ^ t1b13
+        var nk30: byte = d30 ^ t1b14
+        var nk31: byte = d31 ^ t1b15
+
+        // New V = t2 XOR data[32..47]
+        var nv0:  byte = d32 ^ t2b0
+        var nv1:  byte = d33 ^ t2b1
+        var nv2:  byte = d34 ^ t2b2
+        var nv3:  byte = d35 ^ t2b3
+        var nv4:  byte = d36 ^ t2b4
+        var nv5:  byte = d37 ^ t2b5
+        var nv6:  byte = d38 ^ t2b6
+        var nv7:  byte = d39 ^ t2b7
+        var nv8:  byte = d40 ^ t2b8
+        var nv9:  byte = d41 ^ t2b9
+        var nv10: byte = d42 ^ t2b10
+        var nv11: byte = d43 ^ t2b11
+        var nv12: byte = d44 ^ t2b12
+        var nv13: byte = d45 ^ t2b13
+        var nv14: byte = d46 ^ t2b14
+        var nv15: byte = d47 ^ t2b15
+
+        // Update AES key schedule with the new key.
+        var newKey: byte[32]
+        newKey[0]  = nk0;  newKey[1]  = nk1;  newKey[2]  = nk2;  newKey[3]  = nk3
+        newKey[4]  = nk4;  newKey[5]  = nk5;  newKey[6]  = nk6;  newKey[7]  = nk7
+        newKey[8]  = nk8;  newKey[9]  = nk9;  newKey[10] = nk10; newKey[11] = nk11
+        newKey[12] = nk12; newKey[13] = nk13; newKey[14] = nk14; newKey[15] = nk15
+        newKey[16] = nk16; newKey[17] = nk17; newKey[18] = nk18; newKey[19] = nk19
+        newKey[20] = nk20; newKey[21] = nk21; newKey[22] = nk22; newKey[23] = nk23
+        newKey[24] = nk24; newKey[25] = nk25; newKey[26] = nk26; newKey[27] = nk27
+        newKey[28] = nk28; newKey[29] = nk29; newKey[30] = nk30; newKey[31] = nk31
+        this.enc.SetKey(newKey)
+
+        this.v[0]  = nv0  as int
+        this.v[1]  = nv1  as int
+        this.v[2]  = nv2  as int
+        this.v[3]  = nv3  as int
+        this.v[4]  = nv4  as int
+        this.v[5]  = nv5  as int
+        this.v[6]  = nv6  as int
+        this.v[7]  = nv7  as int
+        this.v[8]  = nv8  as int
+        this.v[9]  = nv9  as int
+        this.v[10] = nv10 as int
+        this.v[11] = nv11 as int
+        this.v[12] = nv12 as int
+        this.v[13] = nv13 as int
+        this.v[14] = nv14 as int
+        this.v[15] = nv15 as int
+    }
+
+    // Increment the 128-bit big-endian V counter.
+    // Carry propagates from byte 15 (LSB in big-endian) toward byte 0 (MSB).
+    fn IncrV()
+    {
+        var c0:  int = this.v[0]
+        var c1:  int = this.v[1]
+        var c2:  int = this.v[2]
+        var c3:  int = this.v[3]
+        var c4:  int = this.v[4]
+        var c5:  int = this.v[5]
+        var c6:  int = this.v[6]
+        var c7:  int = this.v[7]
+        var c8:  int = this.v[8]
+        var c9:  int = this.v[9]
+        var c10: int = this.v[10]
+        var c11: int = this.v[11]
+        var c12: int = this.v[12]
+        var c13: int = this.v[13]
+        var c14: int = this.v[14]
+        var c15: int = this.v[15]
+
+        c15 = c15 + 1
+        if (c15 == 256)
+        {
+            c15 = 0
+            c14 = c14 + 1
+            if (c14 == 256)
+            {
+                c14 = 0
+                c13 = c13 + 1
+                if (c13 == 256)
+                {
+                    c13 = 0
+                    c12 = c12 + 1
+                    if (c12 == 256)
+                    {
+                        c12 = 0
+                        c11 = c11 + 1
+                        if (c11 == 256)
+                        {
+                            c11 = 0
+                            c10 = c10 + 1
+                            if (c10 == 256)
+                            {
+                                c10 = 0
+                                c9 = c9 + 1
+                                if (c9 == 256)
+                                {
+                                    c9 = 0
+                                    c8 = c8 + 1
+                                    if (c8 == 256)
+                                    {
+                                        c8 = 0
+                                        c7 = c7 + 1
+                                        if (c7 == 256)
+                                        {
+                                            c7 = 0
+                                            c6 = c6 + 1
+                                            if (c6 == 256)
+                                            {
+                                                c6 = 0
+                                                c5 = c5 + 1
+                                                if (c5 == 256)
+                                                {
+                                                    c5 = 0
+                                                    c4 = c4 + 1
+                                                    if (c4 == 256)
+                                                    {
+                                                        c4 = 0
+                                                        c3 = c3 + 1
+                                                        if (c3 == 256)
+                                                        {
+                                                            c3 = 0
+                                                            c2 = c2 + 1
+                                                            if (c2 == 256)
+                                                            {
+                                                                c2 = 0
+                                                                c1 = c1 + 1
+                                                                if (c1 == 256)
+                                                                {
+                                                                    c1 = 0
+                                                                    c0 = c0 + 1
+                                                                    if (c0 == 256)
+                                                                    {
+                                                                        c0 = 0
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        this.v[0]  = c0
+        this.v[1]  = c1
+        this.v[2]  = c2
+        this.v[3]  = c3
+        this.v[4]  = c4
+        this.v[5]  = c5
+        this.v[6]  = c6
+        this.v[7]  = c7
+        this.v[8]  = c8
+        this.v[9]  = c9
+        this.v[10] = c10
+        this.v[11] = c11
+        this.v[12] = c12
+        this.v[13] = c13
+        this.v[14] = c14
+        this.v[15] = c15
+    }
+}

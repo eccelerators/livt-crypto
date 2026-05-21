@@ -1,0 +1,355 @@
+namespace Livt.Crypto.Aead
+using Livt.Crypto.Stream
+using Livt.Crypto.Mac
+
+
+// ChaCha20-Poly1305 AEAD (RFC 8439 §2.8).
+//
+// Block size is 64 bytes, matching the native ChaCha20 keystream block.
+// Poly1305 is fed internally in 4 x 16-byte sub-blocks per data block.
+//
+// Usage:
+//   1. SetKey(key[32])
+//   2. SetNonce(nonce[12])         -- derives poly_key (counter=0), resets Poly1305,
+//                                     resets ChaCha20 data counter to 1
+//   3. FeedAAD(block[16])          -- feed one 16-byte AAD chunk to Poly1305
+//   4. LoadBlock(block[64]); EncryptBlock()   -- or DecryptBlock()
+//      GetBlock() returns ciphertext (or plaintext)
+//   5. FinalizeTag(aadLenBytes, dataLenBytes)
+//      GetTag() returns the 16-byte Poly1305 tag
+//      VerifyTag(expected) returns 1 on match, 0 on mismatch
+//
+// Partial final blocks: the current component API accepts only full 64-byte
+// data blocks. Build a higher-level adapter before exposing variable-length
+// messages to callers.
+//
+// AAD is fed 16 bytes at a time; the caller pads partial final AAD to 16 bytes.
+// No PRNG is embedded; nonce uniqueness is the caller's responsibility.
+component ChaCha20Poly1305
+{
+    public const KEY_SIZE:   int = 32
+    public const BLOCK_SIZE: int = 64
+    public const NONCE_SIZE: int = 12
+    public const TAG_SIZE:   int = 16
+
+    chacha:   ChaCha20
+    poly:     Poly1305
+
+    blk:    byte[64]
+    outBlk: byte[64]
+    tag:    byte[16]
+
+    new()
+    {
+        this.chacha = new ChaCha20()
+        this.poly   = new Poly1305()
+    }
+
+    // -----------------------------------------------------------------------
+    // Public API
+    // -----------------------------------------------------------------------
+
+    public fn SetKey(key: byte[32])
+    {
+        this.chacha.SetKey(key)
+    }
+
+    // SetNonce: derives the Poly1305 one-time key (ChaCha20 block with counter=0),
+    // sets it as the Poly1305 key, then resets the ChaCha20 counter to 1 for
+    // subsequent data encryption/decryption.
+    public fn SetNonce(nonce: byte[12])
+    {
+        // Build counter block: nonce || 0x00 0x00 0x00 0x00 (counter = 0, LE).
+        var ctr0: byte[16] = [
+            nonce[0],  nonce[1],  nonce[2],  nonce[3],
+            nonce[4],  nonce[5],  nonce[6],  nonce[7],
+            nonce[8],  nonce[9],  nonce[10], nonce[11],
+            0x00, 0x00, 0x00, 0x00]
+        this.chacha.SetCounter(ctr0)
+
+        // Encrypt a 64-byte zero block to obtain the keystream for counter=0.
+        var zeroBlk: byte[64] = [
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+        this.chacha.LoadBlock(zeroBlk)
+        this.chacha.CryptBlock()
+        // First 32 bytes of the keystream = Poly1305 one-time key.
+        // Get the full block into a local before slicing out the Poly1305 key.
+        var ksBlk: byte[64] = this.chacha.GetBlock()
+        var polyKey: byte[32] = [
+            ksBlk[0],  ksBlk[1],  ksBlk[2],  ksBlk[3],
+            ksBlk[4],  ksBlk[5],  ksBlk[6],  ksBlk[7],
+            ksBlk[8],  ksBlk[9],  ksBlk[10], ksBlk[11],
+            ksBlk[12], ksBlk[13], ksBlk[14], ksBlk[15],
+            ksBlk[16], ksBlk[17], ksBlk[18], ksBlk[19],
+            ksBlk[20], ksBlk[21], ksBlk[22], ksBlk[23],
+            ksBlk[24], ksBlk[25], ksBlk[26], ksBlk[27],
+            ksBlk[28], ksBlk[29], ksBlk[30], ksBlk[31]]
+        this.poly.SetKey(polyKey)
+
+        // Reset ChaCha20 counter to 1 (LE): nonce || 0x01 0x00 0x00 0x00.
+        var ctr1: byte[16] = [
+            nonce[0],  nonce[1],  nonce[2],  nonce[3],
+            nonce[4],  nonce[5],  nonce[6],  nonce[7],
+            nonce[8],  nonce[9],  nonce[10], nonce[11],
+            0x01, 0x00, 0x00, 0x00]
+        this.chacha.SetCounter(ctr1)
+    }
+
+    // FeedAAD: feed one 16-byte AAD block to Poly1305.
+    // Caller pads partial final AAD block with zeros.
+    public fn FeedAAD(aadBlock: byte[16])
+    {
+        this.poly.ProcessBlock(aadBlock)
+    }
+
+    public fn LoadBlock(block: byte[64])
+    {
+        for (var i = 0; i < 64; i++)
+        {
+            this.blk[i] = block[i]
+        }
+    }
+
+    // EncryptBlock: encrypt a full 64-byte plaintext block.
+    // Feeds all 4 × 16-byte ciphertext sub-blocks to Poly1305.
+    public fn EncryptBlock()
+    {
+        // Encrypt the full 64-byte block with ChaCha20 (counter auto-increments).
+        this.chacha.LoadBlock(this.blk)
+        this.chacha.CryptBlock()
+
+        // Write ciphertext to outBlk.
+        var c0:  byte = this.chacha.GetByte(0);  var c1:  byte = this.chacha.GetByte(1)
+        var c2:  byte = this.chacha.GetByte(2);  var c3:  byte = this.chacha.GetByte(3)
+        var c4:  byte = this.chacha.GetByte(4);  var c5:  byte = this.chacha.GetByte(5)
+        var c6:  byte = this.chacha.GetByte(6);  var c7:  byte = this.chacha.GetByte(7)
+        var c8:  byte = this.chacha.GetByte(8);  var c9:  byte = this.chacha.GetByte(9)
+        var c10: byte = this.chacha.GetByte(10); var c11: byte = this.chacha.GetByte(11)
+        var c12: byte = this.chacha.GetByte(12); var c13: byte = this.chacha.GetByte(13)
+        var c14: byte = this.chacha.GetByte(14); var c15: byte = this.chacha.GetByte(15)
+        var c16: byte = this.chacha.GetByte(16); var c17: byte = this.chacha.GetByte(17)
+        var c18: byte = this.chacha.GetByte(18); var c19: byte = this.chacha.GetByte(19)
+        var c20: byte = this.chacha.GetByte(20); var c21: byte = this.chacha.GetByte(21)
+        var c22: byte = this.chacha.GetByte(22); var c23: byte = this.chacha.GetByte(23)
+        var c24: byte = this.chacha.GetByte(24); var c25: byte = this.chacha.GetByte(25)
+        var c26: byte = this.chacha.GetByte(26); var c27: byte = this.chacha.GetByte(27)
+        var c28: byte = this.chacha.GetByte(28); var c29: byte = this.chacha.GetByte(29)
+        var c30: byte = this.chacha.GetByte(30); var c31: byte = this.chacha.GetByte(31)
+        var c32: byte = this.chacha.GetByte(32); var c33: byte = this.chacha.GetByte(33)
+        var c34: byte = this.chacha.GetByte(34); var c35: byte = this.chacha.GetByte(35)
+        var c36: byte = this.chacha.GetByte(36); var c37: byte = this.chacha.GetByte(37)
+        var c38: byte = this.chacha.GetByte(38); var c39: byte = this.chacha.GetByte(39)
+        var c40: byte = this.chacha.GetByte(40); var c41: byte = this.chacha.GetByte(41)
+        var c42: byte = this.chacha.GetByte(42); var c43: byte = this.chacha.GetByte(43)
+        var c44: byte = this.chacha.GetByte(44); var c45: byte = this.chacha.GetByte(45)
+        var c46: byte = this.chacha.GetByte(46); var c47: byte = this.chacha.GetByte(47)
+        var c48: byte = this.chacha.GetByte(48); var c49: byte = this.chacha.GetByte(49)
+        var c50: byte = this.chacha.GetByte(50); var c51: byte = this.chacha.GetByte(51)
+        var c52: byte = this.chacha.GetByte(52); var c53: byte = this.chacha.GetByte(53)
+        var c54: byte = this.chacha.GetByte(54); var c55: byte = this.chacha.GetByte(55)
+        var c56: byte = this.chacha.GetByte(56); var c57: byte = this.chacha.GetByte(57)
+        var c58: byte = this.chacha.GetByte(58); var c59: byte = this.chacha.GetByte(59)
+        var c60: byte = this.chacha.GetByte(60); var c61: byte = this.chacha.GetByte(61)
+        var c62: byte = this.chacha.GetByte(62); var c63: byte = this.chacha.GetByte(63)
+
+        this.outBlk[0]  = c0;  this.outBlk[1]  = c1;  this.outBlk[2]  = c2;  this.outBlk[3]  = c3
+        this.outBlk[4]  = c4;  this.outBlk[5]  = c5;  this.outBlk[6]  = c6;  this.outBlk[7]  = c7
+        this.outBlk[8]  = c8;  this.outBlk[9]  = c9;  this.outBlk[10] = c10; this.outBlk[11] = c11
+        this.outBlk[12] = c12; this.outBlk[13] = c13; this.outBlk[14] = c14; this.outBlk[15] = c15
+        this.outBlk[16] = c16; this.outBlk[17] = c17; this.outBlk[18] = c18; this.outBlk[19] = c19
+        this.outBlk[20] = c20; this.outBlk[21] = c21; this.outBlk[22] = c22; this.outBlk[23] = c23
+        this.outBlk[24] = c24; this.outBlk[25] = c25; this.outBlk[26] = c26; this.outBlk[27] = c27
+        this.outBlk[28] = c28; this.outBlk[29] = c29; this.outBlk[30] = c30; this.outBlk[31] = c31
+        this.outBlk[32] = c32; this.outBlk[33] = c33; this.outBlk[34] = c34; this.outBlk[35] = c35
+        this.outBlk[36] = c36; this.outBlk[37] = c37; this.outBlk[38] = c38; this.outBlk[39] = c39
+        this.outBlk[40] = c40; this.outBlk[41] = c41; this.outBlk[42] = c42; this.outBlk[43] = c43
+        this.outBlk[44] = c44; this.outBlk[45] = c45; this.outBlk[46] = c46; this.outBlk[47] = c47
+        this.outBlk[48] = c48; this.outBlk[49] = c49; this.outBlk[50] = c50; this.outBlk[51] = c51
+        this.outBlk[52] = c52; this.outBlk[53] = c53; this.outBlk[54] = c54; this.outBlk[55] = c55
+        this.outBlk[56] = c56; this.outBlk[57] = c57; this.outBlk[58] = c58; this.outBlk[59] = c59
+        this.outBlk[60] = c60; this.outBlk[61] = c61; this.outBlk[62] = c62; this.outBlk[63] = c63
+
+        // Feed 4 × 16-byte sub-blocks of ciphertext to Poly1305.
+        var sub0: byte[16] = [c0,  c1,  c2,  c3,  c4,  c5,  c6,  c7,  c8,  c9,  c10, c11, c12, c13, c14, c15]
+        var sub1: byte[16] = [c16, c17, c18, c19, c20, c21, c22, c23, c24, c25, c26, c27, c28, c29, c30, c31]
+        var sub2: byte[16] = [c32, c33, c34, c35, c36, c37, c38, c39, c40, c41, c42, c43, c44, c45, c46, c47]
+        var sub3: byte[16] = [c48, c49, c50, c51, c52, c53, c54, c55, c56, c57, c58, c59, c60, c61, c62, c63]
+        this.poly.ProcessBlock(sub0)
+        this.poly.ProcessBlock(sub1)
+        this.poly.ProcessBlock(sub2)
+        this.poly.ProcessBlock(sub3)
+    }
+
+    // DecryptBlock: feed the 64-byte ciphertext block to Poly1305 first,
+    // then decrypt with ChaCha20.
+    public fn DecryptBlock()
+    {
+        var c0:  byte = this.blk[0];  var c1:  byte = this.blk[1];  var c2:  byte = this.blk[2];  var c3:  byte = this.blk[3]
+        var c4:  byte = this.blk[4];  var c5:  byte = this.blk[5];  var c6:  byte = this.blk[6];  var c7:  byte = this.blk[7]
+        var c8:  byte = this.blk[8];  var c9:  byte = this.blk[9];  var c10: byte = this.blk[10]; var c11: byte = this.blk[11]
+        var c12: byte = this.blk[12]; var c13: byte = this.blk[13]; var c14: byte = this.blk[14]; var c15: byte = this.blk[15]
+        var c16: byte = this.blk[16]; var c17: byte = this.blk[17]; var c18: byte = this.blk[18]; var c19: byte = this.blk[19]
+        var c20: byte = this.blk[20]; var c21: byte = this.blk[21]; var c22: byte = this.blk[22]; var c23: byte = this.blk[23]
+        var c24: byte = this.blk[24]; var c25: byte = this.blk[25]; var c26: byte = this.blk[26]; var c27: byte = this.blk[27]
+        var c28: byte = this.blk[28]; var c29: byte = this.blk[29]; var c30: byte = this.blk[30]; var c31: byte = this.blk[31]
+        var c32: byte = this.blk[32]; var c33: byte = this.blk[33]; var c34: byte = this.blk[34]; var c35: byte = this.blk[35]
+        var c36: byte = this.blk[36]; var c37: byte = this.blk[37]; var c38: byte = this.blk[38]; var c39: byte = this.blk[39]
+        var c40: byte = this.blk[40]; var c41: byte = this.blk[41]; var c42: byte = this.blk[42]; var c43: byte = this.blk[43]
+        var c44: byte = this.blk[44]; var c45: byte = this.blk[45]; var c46: byte = this.blk[46]; var c47: byte = this.blk[47]
+        var c48: byte = this.blk[48]; var c49: byte = this.blk[49]; var c50: byte = this.blk[50]; var c51: byte = this.blk[51]
+        var c52: byte = this.blk[52]; var c53: byte = this.blk[53]; var c54: byte = this.blk[54]; var c55: byte = this.blk[55]
+        var c56: byte = this.blk[56]; var c57: byte = this.blk[57]; var c58: byte = this.blk[58]; var c59: byte = this.blk[59]
+        var c60: byte = this.blk[60]; var c61: byte = this.blk[61]; var c62: byte = this.blk[62]; var c63: byte = this.blk[63]
+
+        // Feed 4 × 16-byte sub-blocks of ciphertext to Poly1305.
+        var sub0: byte[16] = [c0,  c1,  c2,  c3,  c4,  c5,  c6,  c7,  c8,  c9,  c10, c11, c12, c13, c14, c15]
+        var sub1: byte[16] = [c16, c17, c18, c19, c20, c21, c22, c23, c24, c25, c26, c27, c28, c29, c30, c31]
+        var sub2: byte[16] = [c32, c33, c34, c35, c36, c37, c38, c39, c40, c41, c42, c43, c44, c45, c46, c47]
+        var sub3: byte[16] = [c48, c49, c50, c51, c52, c53, c54, c55, c56, c57, c58, c59, c60, c61, c62, c63]
+        this.poly.ProcessBlock(sub0)
+        this.poly.ProcessBlock(sub1)
+        this.poly.ProcessBlock(sub2)
+        this.poly.ProcessBlock(sub3)
+
+        // Decrypt: XOR ciphertext with ChaCha20 keystream (counter auto-increments).
+        this.chacha.LoadBlock(this.blk)
+        this.chacha.CryptBlock()
+
+        var p0:  byte = this.chacha.GetByte(0);  var p1:  byte = this.chacha.GetByte(1)
+        var p2:  byte = this.chacha.GetByte(2);  var p3:  byte = this.chacha.GetByte(3)
+        var p4:  byte = this.chacha.GetByte(4);  var p5:  byte = this.chacha.GetByte(5)
+        var p6:  byte = this.chacha.GetByte(6);  var p7:  byte = this.chacha.GetByte(7)
+        var p8:  byte = this.chacha.GetByte(8);  var p9:  byte = this.chacha.GetByte(9)
+        var p10: byte = this.chacha.GetByte(10); var p11: byte = this.chacha.GetByte(11)
+        var p12: byte = this.chacha.GetByte(12); var p13: byte = this.chacha.GetByte(13)
+        var p14: byte = this.chacha.GetByte(14); var p15: byte = this.chacha.GetByte(15)
+        var p16: byte = this.chacha.GetByte(16); var p17: byte = this.chacha.GetByte(17)
+        var p18: byte = this.chacha.GetByte(18); var p19: byte = this.chacha.GetByte(19)
+        var p20: byte = this.chacha.GetByte(20); var p21: byte = this.chacha.GetByte(21)
+        var p22: byte = this.chacha.GetByte(22); var p23: byte = this.chacha.GetByte(23)
+        var p24: byte = this.chacha.GetByte(24); var p25: byte = this.chacha.GetByte(25)
+        var p26: byte = this.chacha.GetByte(26); var p27: byte = this.chacha.GetByte(27)
+        var p28: byte = this.chacha.GetByte(28); var p29: byte = this.chacha.GetByte(29)
+        var p30: byte = this.chacha.GetByte(30); var p31: byte = this.chacha.GetByte(31)
+        var p32: byte = this.chacha.GetByte(32); var p33: byte = this.chacha.GetByte(33)
+        var p34: byte = this.chacha.GetByte(34); var p35: byte = this.chacha.GetByte(35)
+        var p36: byte = this.chacha.GetByte(36); var p37: byte = this.chacha.GetByte(37)
+        var p38: byte = this.chacha.GetByte(38); var p39: byte = this.chacha.GetByte(39)
+        var p40: byte = this.chacha.GetByte(40); var p41: byte = this.chacha.GetByte(41)
+        var p42: byte = this.chacha.GetByte(42); var p43: byte = this.chacha.GetByte(43)
+        var p44: byte = this.chacha.GetByte(44); var p45: byte = this.chacha.GetByte(45)
+        var p46: byte = this.chacha.GetByte(46); var p47: byte = this.chacha.GetByte(47)
+        var p48: byte = this.chacha.GetByte(48); var p49: byte = this.chacha.GetByte(49)
+        var p50: byte = this.chacha.GetByte(50); var p51: byte = this.chacha.GetByte(51)
+        var p52: byte = this.chacha.GetByte(52); var p53: byte = this.chacha.GetByte(53)
+        var p54: byte = this.chacha.GetByte(54); var p55: byte = this.chacha.GetByte(55)
+        var p56: byte = this.chacha.GetByte(56); var p57: byte = this.chacha.GetByte(57)
+        var p58: byte = this.chacha.GetByte(58); var p59: byte = this.chacha.GetByte(59)
+        var p60: byte = this.chacha.GetByte(60); var p61: byte = this.chacha.GetByte(61)
+        var p62: byte = this.chacha.GetByte(62); var p63: byte = this.chacha.GetByte(63)
+
+        this.outBlk[0]  = p0;  this.outBlk[1]  = p1;  this.outBlk[2]  = p2;  this.outBlk[3]  = p3
+        this.outBlk[4]  = p4;  this.outBlk[5]  = p5;  this.outBlk[6]  = p6;  this.outBlk[7]  = p7
+        this.outBlk[8]  = p8;  this.outBlk[9]  = p9;  this.outBlk[10] = p10; this.outBlk[11] = p11
+        this.outBlk[12] = p12; this.outBlk[13] = p13; this.outBlk[14] = p14; this.outBlk[15] = p15
+        this.outBlk[16] = p16; this.outBlk[17] = p17; this.outBlk[18] = p18; this.outBlk[19] = p19
+        this.outBlk[20] = p20; this.outBlk[21] = p21; this.outBlk[22] = p22; this.outBlk[23] = p23
+        this.outBlk[24] = p24; this.outBlk[25] = p25; this.outBlk[26] = p26; this.outBlk[27] = p27
+        this.outBlk[28] = p28; this.outBlk[29] = p29; this.outBlk[30] = p30; this.outBlk[31] = p31
+        this.outBlk[32] = p32; this.outBlk[33] = p33; this.outBlk[34] = p34; this.outBlk[35] = p35
+        this.outBlk[36] = p36; this.outBlk[37] = p37; this.outBlk[38] = p38; this.outBlk[39] = p39
+        this.outBlk[40] = p40; this.outBlk[41] = p41; this.outBlk[42] = p42; this.outBlk[43] = p43
+        this.outBlk[44] = p44; this.outBlk[45] = p45; this.outBlk[46] = p46; this.outBlk[47] = p47
+        this.outBlk[48] = p48; this.outBlk[49] = p49; this.outBlk[50] = p50; this.outBlk[51] = p51
+        this.outBlk[52] = p52; this.outBlk[53] = p53; this.outBlk[54] = p54; this.outBlk[55] = p55
+        this.outBlk[56] = p56; this.outBlk[57] = p57; this.outBlk[58] = p58; this.outBlk[59] = p59
+        this.outBlk[60] = p60; this.outBlk[61] = p61; this.outBlk[62] = p62; this.outBlk[63] = p63
+    }
+
+    // FinalizeTag: feed the 16-byte length block (LE64(aadLen) || LE64(dataLen))
+    // to Poly1305 as the final block, then finalize the tag.
+    // RFC 8439 §2.8: lengths encoded as 64-bit little-endian.
+    public fn FinalizeTag(aadLenBytes: int, dataLenBytes: int)
+    {
+        // Build LE64(aadLenBytes) || LE64(dataLenBytes) as a 16-byte block.
+        // For the expected message sizes (< 2^32) only the low 4 bytes are nonzero.
+        var la0: int = aadLenBytes  % 256
+        var la1: int = (aadLenBytes  / 256) % 256
+        var la2: int = (aadLenBytes  / 65536) % 256
+        var la3: int = (aadLenBytes  / 16777216) % 256
+        var ld0: int = dataLenBytes % 256
+        var ld1: int = (dataLenBytes / 256) % 256
+        var ld2: int = (dataLenBytes / 65536) % 256
+        var ld3: int = (dataLenBytes / 16777216) % 256
+        var bla0: byte = la0 as byte; var bla1: byte = la1 as byte
+        var bla2: byte = la2 as byte; var bla3: byte = la3 as byte
+        var bld0: byte = ld0 as byte; var bld1: byte = ld1 as byte
+        var bld2: byte = ld2 as byte; var bld3: byte = ld3 as byte
+        var lenBlk: byte[16] = [
+            bla0, bla1, bla2, bla3, 0x00, 0x00, 0x00, 0x00,
+            bld0, bld1, bld2, bld3, 0x00, 0x00, 0x00, 0x00]
+        this.poly.ProcessBlock(lenBlk)
+        this.poly.FinalizeTag()
+        var t: byte[16] = this.poly.GetTag()
+        for (var i = 0; i < 16; i++)
+        {
+            this.tag[i] = t[i]
+        }
+    }
+
+    public fn GetBlock() byte[64]
+    {
+        return this.outBlk
+    }
+
+    public fn GetByte(idx: int) byte
+    {
+        return this.outBlk[idx]
+    }
+
+    public fn GetTag() byte[16]
+    {
+        return this.tag
+    }
+
+    // VerifyTag compares the finalized authentication tag without early exit.
+    // Returns 1 on match, 0 on mismatch.
+    public fn VerifyTag(expected: byte[16]) int
+    {
+        var diff: byte = 0x00
+        for (var i = 0; i < 16; i++)
+        {
+            var delta: byte = this.tag[i] ^ expected[i]
+            diff = diff ^ delta
+        }
+
+        var result: int = 0
+        if (diff == 0x00)
+        {
+            result = 1
+        }
+        return result
+    }
+
+    public fn ClearKey()
+    {
+        this.chacha.ClearKey()
+        for (var i = 0; i < 32; i++)
+        {
+            var zb: byte = 0x00 as byte
+            this.blk[i] = zb
+        }
+        for (var i = 0; i < 32; i++)
+        {
+            var zb: byte = 0x00 as byte
+            this.outBlk[i] = zb
+        }
+    }
+}

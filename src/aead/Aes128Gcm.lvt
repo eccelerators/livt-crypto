@@ -1,0 +1,406 @@
+namespace Livt.Crypto.Aead
+using Livt.Crypto.Aes
+using Livt.Crypto.Internal
+
+
+// AES-128 GCM (Galois/Counter Mode) — single-block interface.
+// NIST SP 800-38D.  IV (nonce) must be exactly 96 bits (12 bytes).
+// See Aes256Gcm for full usage notes.
+component Aes128Gcm
+{
+    public const KEY_SIZE:   int = 16
+    public const BLOCK_SIZE: int = 16
+    public const NONCE_SIZE: int = 12
+    public const TAG_SIZE:   int = 16
+
+    enc:    EncryptBlock128
+    ghash:  Ghash
+
+    H:      byte[16]
+    J0:     byte[16]
+    Yi:     byte[16]
+    yi12:   int
+    yi13:   int
+    yi14:   int
+    yi15:   int
+
+    blk:    byte[16]
+    outBlk: byte[16]
+    tag:    byte[16]
+
+    new()
+    {
+        this.enc   = new EncryptBlock128()
+        this.ghash = new Ghash()
+    }
+
+    public fn SetKey(key: byte[16])
+    {
+        this.enc.SetKey(key)
+
+        var zeroBlock: byte[16] = [
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+        this.enc.LoadBlock(zeroBlock)
+        this.enc.EncryptBlock()
+        var h: byte[16] = this.enc.GetBlock()
+        state {
+            this.H[0]  = h[0]
+            this.H[1]  = h[1]
+            this.H[2]  = h[2]
+            this.H[3]  = h[3]
+            this.H[4]  = h[4]
+            this.H[5]  = h[5]
+            this.H[6]  = h[6]
+            this.H[7]  = h[7]
+            this.H[8]  = h[8]
+            this.H[9]  = h[9]
+            this.H[10] = h[10]
+            this.H[11] = h[11]
+            this.H[12] = h[12]
+            this.H[13] = h[13]
+            this.H[14] = h[14]
+            this.H[15] = h[15]
+        }
+        this.ghash.SetHashKey(h)
+    }
+
+    public fn SetNonce(nonce: byte[12])
+    {
+        state {
+            this.J0[0]  = nonce[0]
+            this.J0[1]  = nonce[1]
+            this.J0[2]  = nonce[2]
+            this.J0[3]  = nonce[3]
+            this.J0[4]  = nonce[4]
+            this.J0[5]  = nonce[5]
+            this.J0[6]  = nonce[6]
+            this.J0[7]  = nonce[7]
+            this.J0[8]  = nonce[8]
+            this.J0[9]  = nonce[9]
+            this.J0[10] = nonce[10]
+            this.J0[11] = nonce[11]
+            this.J0[12] = 0x00
+            this.J0[13] = 0x00
+            this.J0[14] = 0x00
+            this.J0[15] = 0x01
+            this.Yi[0]  = nonce[0]
+            this.Yi[1]  = nonce[1]
+            this.Yi[2]  = nonce[2]
+            this.Yi[3]  = nonce[3]
+            this.Yi[4]  = nonce[4]
+            this.Yi[5]  = nonce[5]
+            this.Yi[6]  = nonce[6]
+            this.Yi[7]  = nonce[7]
+            this.Yi[8]  = nonce[8]
+            this.Yi[9]  = nonce[9]
+            this.Yi[10] = nonce[10]
+            this.Yi[11] = nonce[11]
+            this.Yi[12] = 0x00
+            this.Yi[13] = 0x00
+            this.Yi[14] = 0x00
+            this.Yi[15] = 0x02
+        }
+        this.yi12 = 0
+        this.yi13 = 0
+        this.yi14 = 0
+        this.yi15 = 2
+
+        this.ghash.Reset()
+    }
+
+    public fn FeedAAD(block: byte[16])
+    {
+        this.ghash.UpdateBlock(block)
+    }
+
+    public fn LoadBlock(block: byte[16])
+    {
+        state {
+            this.blk[0]  = block[0]
+            this.blk[1]  = block[1]
+            this.blk[2]  = block[2]
+            this.blk[3]  = block[3]
+            this.blk[4]  = block[4]
+            this.blk[5]  = block[5]
+            this.blk[6]  = block[6]
+            this.blk[7]  = block[7]
+            this.blk[8]  = block[8]
+            this.blk[9]  = block[9]
+            this.blk[10] = block[10]
+            this.blk[11] = block[11]
+            this.blk[12] = block[12]
+            this.blk[13] = block[13]
+            this.blk[14] = block[14]
+            this.blk[15] = block[15]
+        }
+    }
+
+    public fn EncryptBlock()
+    {
+        var ks: byte[16] = this.EncryptCounter()
+
+        var b0:  byte = this.blk[0]
+        var b1:  byte = this.blk[1]
+        var b2:  byte = this.blk[2]
+        var b3:  byte = this.blk[3]
+        var b4:  byte = this.blk[4]
+        var b5:  byte = this.blk[5]
+        var b6:  byte = this.blk[6]
+        var b7:  byte = this.blk[7]
+        var b8:  byte = this.blk[8]
+        var b9:  byte = this.blk[9]
+        var b10: byte = this.blk[10]
+        var b11: byte = this.blk[11]
+        var b12: byte = this.blk[12]
+        var b13: byte = this.blk[13]
+        var b14: byte = this.blk[14]
+        var b15: byte = this.blk[15]
+
+        // Compute ciphertext into a local variable so it is immediately visible
+        // to the cross-component call in the next cycle (field-signal this.outBlk
+        // would be one cycle stale due to the outblk_accessor register stage).
+        var ct: byte[16]
+        state {
+            ct[0]  = b0  ^ ks[0]
+            ct[1]  = b1  ^ ks[1]
+            ct[2]  = b2  ^ ks[2]
+            ct[3]  = b3  ^ ks[3]
+            ct[4]  = b4  ^ ks[4]
+            ct[5]  = b5  ^ ks[5]
+            ct[6]  = b6  ^ ks[6]
+            ct[7]  = b7  ^ ks[7]
+            ct[8]  = b8  ^ ks[8]
+            ct[9]  = b9  ^ ks[9]
+            ct[10] = b10 ^ ks[10]
+            ct[11] = b11 ^ ks[11]
+            ct[12] = b12 ^ ks[12]
+            ct[13] = b13 ^ ks[13]
+            ct[14] = b14 ^ ks[14]
+            ct[15] = b15 ^ ks[15]
+        }
+
+        this.ghash.UpdateBlock(ct)
+
+        state {
+            this.outBlk[0]  = ct[0]
+            this.outBlk[1]  = ct[1]
+            this.outBlk[2]  = ct[2]
+            this.outBlk[3]  = ct[3]
+            this.outBlk[4]  = ct[4]
+            this.outBlk[5]  = ct[5]
+            this.outBlk[6]  = ct[6]
+            this.outBlk[7]  = ct[7]
+            this.outBlk[8]  = ct[8]
+            this.outBlk[9]  = ct[9]
+            this.outBlk[10] = ct[10]
+            this.outBlk[11] = ct[11]
+            this.outBlk[12] = ct[12]
+            this.outBlk[13] = ct[13]
+            this.outBlk[14] = ct[14]
+            this.outBlk[15] = ct[15]
+        }
+
+        this.IncrementCounter()
+    }
+
+    public fn DecryptBlock()
+    {
+        var ks: byte[16] = this.EncryptCounter()
+
+        var b0:  byte = this.blk[0]
+        var b1:  byte = this.blk[1]
+        var b2:  byte = this.blk[2]
+        var b3:  byte = this.blk[3]
+        var b4:  byte = this.blk[4]
+        var b5:  byte = this.blk[5]
+        var b6:  byte = this.blk[6]
+        var b7:  byte = this.blk[7]
+        var b8:  byte = this.blk[8]
+        var b9:  byte = this.blk[9]
+        var b10: byte = this.blk[10]
+        var b11: byte = this.blk[11]
+        var b12: byte = this.blk[12]
+        var b13: byte = this.blk[13]
+        var b14: byte = this.blk[14]
+        var b15: byte = this.blk[15]
+
+        this.ghash.UpdateBlock(this.blk)
+
+        state {
+            this.outBlk[0]  = b0  ^ ks[0]
+            this.outBlk[1]  = b1  ^ ks[1]
+            this.outBlk[2]  = b2  ^ ks[2]
+            this.outBlk[3]  = b3  ^ ks[3]
+            this.outBlk[4]  = b4  ^ ks[4]
+            this.outBlk[5]  = b5  ^ ks[5]
+            this.outBlk[6]  = b6  ^ ks[6]
+            this.outBlk[7]  = b7  ^ ks[7]
+            this.outBlk[8]  = b8  ^ ks[8]
+            this.outBlk[9]  = b9  ^ ks[9]
+            this.outBlk[10] = b10 ^ ks[10]
+            this.outBlk[11] = b11 ^ ks[11]
+            this.outBlk[12] = b12 ^ ks[12]
+            this.outBlk[13] = b13 ^ ks[13]
+            this.outBlk[14] = b14 ^ ks[14]
+            this.outBlk[15] = b15 ^ ks[15]
+        }
+
+        this.IncrementCounter()
+    }
+
+    public fn FinalizeTag(aadLenBytes: int, dataLenBytes: int)
+    {
+        var aadBits:  int = aadLenBytes  * 8
+        var dataBits: int = dataLenBytes * 8
+
+        var lenBlock: byte[16]
+        lenBlock[0]  = 0x00
+        lenBlock[1]  = 0x00
+        lenBlock[2]  = 0x00
+        lenBlock[3]  = 0x00
+
+        var ab3: int  = aadBits % 256
+        var ab3b: byte = ab3 as byte
+        var ab2: int  = (aadBits / 256) % 256
+        var ab2b: byte = ab2 as byte
+        var ab1: int  = (aadBits / 65536) % 256
+        var ab1b: byte = ab1 as byte
+        var ab0: int  = (aadBits / 16777216) % 256
+        var ab0b: byte = ab0 as byte
+        lenBlock[4]  = ab0b
+        lenBlock[5]  = ab1b
+        lenBlock[6]  = ab2b
+        lenBlock[7]  = ab3b
+
+        lenBlock[8]  = 0x00
+        lenBlock[9]  = 0x00
+        lenBlock[10] = 0x00
+        lenBlock[11] = 0x00
+
+        var db3: int  = dataBits % 256
+        var db3b: byte = db3 as byte
+        var db2: int  = (dataBits / 256) % 256
+        var db2b: byte = db2 as byte
+        var db1: int  = (dataBits / 65536) % 256
+        var db1b: byte = db1 as byte
+        var db0: int  = (dataBits / 16777216) % 256
+        var db0b: byte = db0 as byte
+        lenBlock[12] = db0b
+        lenBlock[13] = db1b
+        lenBlock[14] = db2b
+        lenBlock[15] = db3b
+
+        this.ghash.UpdateBlock(lenBlock)
+
+        var S: byte[16] = this.ghash.GetY()
+
+        this.enc.LoadBlock(this.J0)
+        this.enc.EncryptBlock()
+        var ej0: byte[16] = this.enc.GetBlock()
+
+        state {
+            this.tag[0]  = S[0]  ^ ej0[0]
+            this.tag[1]  = S[1]  ^ ej0[1]
+            this.tag[2]  = S[2]  ^ ej0[2]
+            this.tag[3]  = S[3]  ^ ej0[3]
+            this.tag[4]  = S[4]  ^ ej0[4]
+            this.tag[5]  = S[5]  ^ ej0[5]
+            this.tag[6]  = S[6]  ^ ej0[6]
+            this.tag[7]  = S[7]  ^ ej0[7]
+            this.tag[8]  = S[8]  ^ ej0[8]
+            this.tag[9]  = S[9]  ^ ej0[9]
+            this.tag[10] = S[10] ^ ej0[10]
+            this.tag[11] = S[11] ^ ej0[11]
+            this.tag[12] = S[12] ^ ej0[12]
+            this.tag[13] = S[13] ^ ej0[13]
+            this.tag[14] = S[14] ^ ej0[14]
+            this.tag[15] = S[15] ^ ej0[15]
+        }
+    }
+
+    public fn GetBlock() byte[16]
+    {
+        return this.outBlk
+    }
+
+    public fn GetByte(idx: int) byte
+    {
+        return this.outBlk[idx]
+    }
+
+    public fn GetTag() byte[16]
+    {
+        return this.tag
+    }
+
+    // VerifyTag compares the finalized authentication tag without early exit.
+    // Returns 1 on match, 0 on mismatch.
+    public fn VerifyTag(expected: byte[16]) int
+    {
+        var diff: byte = 0x00
+        for (var i = 0; i < 16; i++)
+        {
+            var delta: byte = this.tag[i] ^ expected[i]
+            diff = diff ^ delta
+        }
+
+        var result: int = 0
+        if (diff == 0x00)
+        {
+            result = 1
+        }
+        return result
+    }
+
+    public fn ClearKey()
+    {
+        this.enc.ClearKey()
+    }
+
+    fn EncryptCounter() byte[16]
+    {
+        this.enc.LoadBlock(this.Yi)
+        this.enc.EncryptBlock()
+        return this.enc.GetBlock()
+    }
+
+    fn IncrementCounter()
+    {
+        var c12: int = this.yi12
+        var c13: int = this.yi13
+        var c14: int = this.yi14
+        var c15: int = this.yi15
+
+        c15 = c15 + 1
+        if (c15 == 256)
+        {
+            c15 = 0
+            c14 = c14 + 1
+            if (c14 == 256)
+            {
+                c14 = 0
+                c13 = c13 + 1
+                if (c13 == 256)
+                {
+                    c13 = 0
+                    c12 = c12 + 1
+                    if (c12 == 256)
+                    {
+                        c12 = 0
+                    }
+                }
+            }
+        }
+
+        this.yi12 = c12
+        this.yi13 = c13
+        this.yi14 = c14
+        this.yi15 = c15
+
+        this.Yi[12] = c12 as byte
+        this.Yi[13] = c13 as byte
+        this.Yi[14] = c14 as byte
+        this.Yi[15] = c15 as byte
+    }
+}

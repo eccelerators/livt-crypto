@@ -1,0 +1,196 @@
+namespace Livt.Crypto.Tests.Aes
+using Livt.Crypto.Aes
+
+
+
+@Test
+component Aes128Test
+{
+    aes: EncryptBlock128
+
+    new()
+    {
+        this.aes = new EncryptBlock128()
+    }
+
+    // NIST FIPS 197 Appendix C.1 AES-128 encryption vector.
+    // Key:       000102030405060708090a0b0c0d0e0f
+    // Plaintext: 00112233445566778899aabbccddeeff
+    // Ciphertext: 69c4e0d86a7b0430d8cdb78070b4c55a
+    // Verify: echo "00112233445566778899aabbccddeeff" | xxd -r -p | openssl enc -aes-128-ecb -K 000102030405060708090a0b0c0d0e0f -nopad 2>/dev/null | xxd -p
+    @Test
+    fn TestNistFips197()
+    {
+        var key: byte[16] = [
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+            0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f]
+
+        var plaintext: byte[16] = [
+            0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
+            0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff]
+
+        this.aes.SetKey(key)
+        this.aes.LoadBlock(plaintext)
+        this.aes.EncryptBlock()
+
+        var ct: byte[16] = this.aes.GetBlock()
+        assert ct[0]  == 0x69
+        assert ct[1]  == 0xc4
+        assert ct[2]  == 0xe0
+        assert ct[3]  == 0xd8
+        assert ct[4]  == 0x6a
+        assert ct[5]  == 0x7b
+        assert ct[6]  == 0x04
+        assert ct[7]  == 0x30
+        assert ct[8]  == 0xd8
+        assert ct[9]  == 0xcd
+        assert ct[10] == 0xb7
+        assert ct[11] == 0x80
+        assert ct[12] == 0x70
+        assert ct[13] == 0xb4
+        assert ct[14] == 0xc5
+        assert ct[15] == 0x5a
+    }
+
+    // NIST SP 800-38A Appendix F.1.1 AES-128 ECB — blocks 1 and 2.
+    // Key:     2b7e151628aed2a6abf7158809cf4f3c
+    // Block 1: 6bc1bee22e409f96e93d7e117393172a → 3ad77bb40d7a3660a89ecaf32466ef97
+    // Block 2: ae2d8a571e03ac9c9eb76fac45af8e51 → f5d3d58503b9699de785895a96fdbaaf
+    // Verify block 1: echo "6bc1bee22e409f96e93d7e117393172a" | xxd -r -p | openssl enc -aes-128-ecb -K 2b7e151628aed2a6abf7158809cf4f3c -nopad 2>/dev/null | xxd -p
+    // Verify block 2: echo "ae2d8a571e03ac9c9eb76fac45af8e51" | xxd -r -p | openssl enc -aes-128-ecb -K 2b7e151628aed2a6abf7158809cf4f3c -nopad 2>/dev/null | xxd -p
+    @Test
+    fn TestNistSp80038A()
+    {
+        var key: byte[16] = [
+            0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,
+            0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c]
+
+        var pt1: byte[16] = [
+            0x6b, 0xc1, 0xbe, 0xe2, 0x2e, 0x40, 0x9f, 0x96,
+            0xe9, 0x3d, 0x7e, 0x11, 0x73, 0x93, 0x17, 0x2a]
+
+        this.aes.SetKey(key)
+        this.aes.LoadBlock(pt1)
+        this.aes.EncryptBlock()
+
+        var ct1: byte[16] = this.aes.GetBlock()
+        assert ct1[0]  == 0x3a
+        assert ct1[1]  == 0xd7
+        assert ct1[2]  == 0x7b
+        assert ct1[3]  == 0xb4
+        assert ct1[4]  == 0x0d
+        assert ct1[5]  == 0x7a
+        assert ct1[6]  == 0x36
+        assert ct1[7]  == 0x60
+        assert ct1[8]  == 0xa8
+        assert ct1[9]  == 0x9e
+        assert ct1[10] == 0xca
+        assert ct1[11] == 0xf3
+        assert ct1[12] == 0x24
+        assert ct1[13] == 0x66
+        assert ct1[14] == 0xef
+        assert ct1[15] == 0x97
+
+        var pt2: byte[16] = [
+            0xae, 0x2d, 0x8a, 0x57, 0x1e, 0x03, 0xac, 0x9c,
+            0x9e, 0xb7, 0x6f, 0xac, 0x45, 0xaf, 0x8e, 0x51]
+
+        this.aes.LoadBlock(pt2)
+        this.aes.EncryptBlock()
+
+        var ct2: byte[16] = this.aes.GetBlock()
+        assert ct2[0]  == 0xf5
+        assert ct2[1]  == 0xd3
+        assert ct2[2]  == 0xd5
+        assert ct2[3]  == 0x85
+        assert ct2[4]  == 0x03
+        assert ct2[5]  == 0xb9
+        assert ct2[6]  == 0x69
+        assert ct2[7]  == 0x9d
+        assert ct2[8]  == 0xe7
+        assert ct2[9]  == 0x85
+        assert ct2[10] == 0x89
+        assert ct2[11] == 0x5a
+        assert ct2[12] == 0x96
+        assert ct2[13] == 0xfd
+        assert ct2[14] == 0xba
+        assert ct2[15] == 0xaf
+    }
+
+    // All-zero 128-bit key with all-zero plaintext.
+    // Verify: echo "00000000000000000000000000000000" | xxd -r -p | openssl enc -aes-128-ecb -K 00000000000000000000000000000000 -nopad 2>/dev/null | xxd -p
+    // Expected: 66e94bd4ef8a2c3b884cfa59ca342b2e
+    @Test
+    fn TestAllZeroKeyAndPlaintext()
+    {
+        var key: byte[16] = [
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+
+        var plaintext: byte[16] = [
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+
+        this.aes.SetKey(key)
+        this.aes.LoadBlock(plaintext)
+        this.aes.EncryptBlock()
+
+        var ct: byte[16] = this.aes.GetBlock()
+        assert ct[0]  == 0x66
+        assert ct[1]  == 0xe9
+        assert ct[2]  == 0x4b
+        assert ct[3]  == 0xd4
+        assert ct[4]  == 0xef
+        assert ct[5]  == 0x8a
+        assert ct[6]  == 0x2c
+        assert ct[7]  == 0x3b
+        assert ct[8]  == 0x88
+        assert ct[9]  == 0x4c
+        assert ct[10] == 0xfa
+        assert ct[11] == 0x59
+        assert ct[12] == 0xca
+        assert ct[13] == 0x34
+        assert ct[14] == 0x2b
+        assert ct[15] == 0x2e
+    }
+
+    // User behaviour: same key + same plaintext encrypted twice must yield
+    // identical ciphertext both times.
+    @Test
+    fn TestDeterminism()
+    {
+        var key: byte[16] = [
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+            0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f]
+
+        var plaintext: byte[16] = [
+            0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
+            0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff]
+
+        this.aes.SetKey(key)
+        this.aes.LoadBlock(plaintext)
+        this.aes.EncryptBlock()
+        var ct1: byte[16] = this.aes.GetBlock()
+
+        this.aes.LoadBlock(plaintext)
+        this.aes.EncryptBlock()
+        var ct2: byte[16] = this.aes.GetBlock()
+
+        assert ct1[0]  == ct2[0]
+        assert ct1[1]  == ct2[1]
+        assert ct1[2]  == ct2[2]
+        assert ct1[3]  == ct2[3]
+        assert ct1[4]  == ct2[4]
+        assert ct1[5]  == ct2[5]
+        assert ct1[6]  == ct2[6]
+        assert ct1[7]  == ct2[7]
+        assert ct1[8]  == ct2[8]
+        assert ct1[9]  == ct2[9]
+        assert ct1[10] == ct2[10]
+        assert ct1[11] == ct2[11]
+        assert ct1[12] == ct2[12]
+        assert ct1[13] == ct2[13]
+        assert ct1[14] == ct2[14]
+        assert ct1[15] == ct2[15]
+    }
+}

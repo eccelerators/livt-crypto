@@ -1,0 +1,317 @@
+namespace Livt.Crypto.Tests.Stream
+using Livt.Crypto.Stream
+
+
+
+// ChaCha20Test — RFC 8439 test vectors and roundtrip test.
+@Test component ChaCha20Test
+{
+    cc: ChaCha20
+
+    new()
+    {
+        this.cc = new ChaCha20()
+    }
+
+    // TestRfc8439KeystreamBlock — RFC 8439 §2.3.2.
+    // key   = 00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f
+    //         10 11 12 13 14 15 16 17 18 19 1a 1b 1c 1d 1e 1f
+    // nonce = 00 00 00 09 00 00 00 4a 00 00 00 00
+    // counter = 1
+    // Encrypt 64 zero bytes → keystream block.
+    // Expected keystream (little-endian serialised state after final add):
+    //   10 f1 e7 e4 d1 3b 59 15 50 0f dd 1f a3 20 71 c4
+    //   c7 d1 f4 c7 33 c0 68 03 04 22 aa 9a c3 d4 6c 4e
+    //   d2 82 64 46 07 9f aa 09 14 c2 d7 05 d9 8b 02 a2
+    //   b5 12 9c d1 de 16 4e b9 cb d0 83 e8 a2 50 3c 4e
+    @Test fn TestRfc8439KeystreamBlock()
+    {
+        var key: byte[32]
+        key[0]=0x00; key[1]=0x01; key[2]=0x02; key[3]=0x03
+        key[4]=0x04; key[5]=0x05; key[6]=0x06; key[7]=0x07
+        key[8]=0x08; key[9]=0x09; key[10]=0x0a; key[11]=0x0b
+        key[12]=0x0c; key[13]=0x0d; key[14]=0x0e; key[15]=0x0f
+        key[16]=0x10; key[17]=0x11; key[18]=0x12; key[19]=0x13
+        key[20]=0x14; key[21]=0x15; key[22]=0x16; key[23]=0x17
+        key[24]=0x18; key[25]=0x19; key[26]=0x1a; key[27]=0x1b
+        key[28]=0x1c; key[29]=0x1d; key[30]=0x1e; key[31]=0x1f
+        this.cc.SetKey(key)
+
+        // counter[12..15] = 1 (LE) = {0x01, 0x00, 0x00, 0x00}
+        // nonce = 00 00 00 09 00 00 00 4a 00 00 00 00
+        var ctr: byte[16]
+        ctr[0]=0x00; ctr[1]=0x00; ctr[2]=0x00; ctr[3]=0x09
+        ctr[4]=0x00; ctr[5]=0x00; ctr[6]=0x00; ctr[7]=0x4a
+        ctr[8]=0x00; ctr[9]=0x00; ctr[10]=0x00; ctr[11]=0x00
+        ctr[12]=0x01; ctr[13]=0x00; ctr[14]=0x00; ctr[15]=0x00
+        this.cc.SetCounter(ctr)
+
+        var pt: byte[64]
+        pt[0]=0x00; pt[1]=0x00; pt[2]=0x00; pt[3]=0x00
+        pt[4]=0x00; pt[5]=0x00; pt[6]=0x00; pt[7]=0x00
+        pt[8]=0x00; pt[9]=0x00; pt[10]=0x00; pt[11]=0x00
+        pt[12]=0x00; pt[13]=0x00; pt[14]=0x00; pt[15]=0x00
+        pt[16]=0x00; pt[17]=0x00; pt[18]=0x00; pt[19]=0x00
+        pt[20]=0x00; pt[21]=0x00; pt[22]=0x00; pt[23]=0x00
+        pt[24]=0x00; pt[25]=0x00; pt[26]=0x00; pt[27]=0x00
+        pt[28]=0x00; pt[29]=0x00; pt[30]=0x00; pt[31]=0x00
+        pt[32]=0x00; pt[33]=0x00; pt[34]=0x00; pt[35]=0x00
+        pt[36]=0x00; pt[37]=0x00; pt[38]=0x00; pt[39]=0x00
+        pt[40]=0x00; pt[41]=0x00; pt[42]=0x00; pt[43]=0x00
+        pt[44]=0x00; pt[45]=0x00; pt[46]=0x00; pt[47]=0x00
+        pt[48]=0x00; pt[49]=0x00; pt[50]=0x00; pt[51]=0x00
+        pt[52]=0x00; pt[53]=0x00; pt[54]=0x00; pt[55]=0x00
+        pt[56]=0x00; pt[57]=0x00; pt[58]=0x00; pt[59]=0x00
+        pt[60]=0x00; pt[61]=0x00; pt[62]=0x00; pt[63]=0x00
+        this.cc.LoadBlock(pt)
+        this.cc.CryptBlock()
+
+        assert this.cc.GetByte(0)  == 0x10
+        assert this.cc.GetByte(1)  == 0xf1
+        assert this.cc.GetByte(2)  == 0xe7
+        assert this.cc.GetByte(3)  == 0xe4
+        assert this.cc.GetByte(4)  == 0xd1
+        assert this.cc.GetByte(5)  == 0x3b
+        assert this.cc.GetByte(6)  == 0x59
+        assert this.cc.GetByte(7)  == 0x15
+        assert this.cc.GetByte(8)  == 0x50
+        assert this.cc.GetByte(9)  == 0x0f
+        assert this.cc.GetByte(10) == 0xdd
+        assert this.cc.GetByte(11) == 0x1f
+        assert this.cc.GetByte(12) == 0xa3
+        assert this.cc.GetByte(13) == 0x20
+        assert this.cc.GetByte(14) == 0x71
+        assert this.cc.GetByte(15) == 0xc4
+        assert this.cc.GetByte(16) == 0xc7
+        assert this.cc.GetByte(17) == 0xd1
+        assert this.cc.GetByte(18) == 0xf4
+        assert this.cc.GetByte(19) == 0xc7
+        assert this.cc.GetByte(20) == 0x33
+        assert this.cc.GetByte(21) == 0xc0
+        assert this.cc.GetByte(22) == 0x68
+        assert this.cc.GetByte(23) == 0x03
+        assert this.cc.GetByte(24) == 0x04
+        assert this.cc.GetByte(25) == 0x22
+        assert this.cc.GetByte(26) == 0xaa
+        assert this.cc.GetByte(27) == 0x9a
+        assert this.cc.GetByte(28) == 0xc3
+        assert this.cc.GetByte(29) == 0xd4
+        assert this.cc.GetByte(30) == 0x6c
+        assert this.cc.GetByte(31) == 0x4e
+        assert this.cc.GetByte(32) == 0xd2
+        assert this.cc.GetByte(33) == 0x82
+        assert this.cc.GetByte(34) == 0x64
+        assert this.cc.GetByte(35) == 0x46
+        assert this.cc.GetByte(36) == 0x07
+        assert this.cc.GetByte(37) == 0x9f
+        assert this.cc.GetByte(38) == 0xaa
+        assert this.cc.GetByte(39) == 0x09
+        assert this.cc.GetByte(40) == 0x14
+        assert this.cc.GetByte(41) == 0xc2
+        assert this.cc.GetByte(42) == 0xd7
+        assert this.cc.GetByte(43) == 0x05
+        assert this.cc.GetByte(44) == 0xd9
+        assert this.cc.GetByte(45) == 0x8b
+        assert this.cc.GetByte(46) == 0x02
+        assert this.cc.GetByte(47) == 0xa2
+        assert this.cc.GetByte(48) == 0xb5
+        assert this.cc.GetByte(49) == 0x12
+        assert this.cc.GetByte(50) == 0x9c
+        assert this.cc.GetByte(51) == 0xd1
+        assert this.cc.GetByte(52) == 0xde
+        assert this.cc.GetByte(53) == 0x16
+        assert this.cc.GetByte(54) == 0x4e
+        assert this.cc.GetByte(55) == 0xb9
+        assert this.cc.GetByte(56) == 0xcb
+        assert this.cc.GetByte(57) == 0xd0
+        assert this.cc.GetByte(58) == 0x83
+        assert this.cc.GetByte(59) == 0xe8
+        assert this.cc.GetByte(60) == 0xa2
+        assert this.cc.GetByte(61) == 0x50
+        assert this.cc.GetByte(62) == 0x3c
+        assert this.cc.GetByte(63) == 0x4e
+    }
+
+    // TestRfc8439Encrypt — RFC 8439 §2.4.2, first 64-byte block.
+    // key   = 00 01 02 ... 1f
+    // nonce = 00 00 00 00 00 00 00 4a 00 00 00 00
+    // counter = 1
+    // Plaintext (first 64 bytes):
+    //   "Ladies and Gentlemen of the class of '99: Did you know..."
+    // Expected ciphertext (first 64 bytes):
+    //   6e 2e 35 9a 25 68 f9 80 41 ba 07 28 dd 0d 69 81
+    //   e9 7e 7a ec 1d 43 60 c2 0a 27 af cc fd 9f ae 0b
+    //   f9 1b 65 c5 52 47 33 ab 8f 59 3d ab cd 62 b3 57
+    //   16 39 d6 24 e6 51 52 ab 8f 53 0c 35 9f 08 61 d8
+    @Test fn TestRfc8439Encrypt()
+    {
+        var key: byte[32]
+        key[0]=0x00; key[1]=0x01; key[2]=0x02; key[3]=0x03
+        key[4]=0x04; key[5]=0x05; key[6]=0x06; key[7]=0x07
+        key[8]=0x08; key[9]=0x09; key[10]=0x0a; key[11]=0x0b
+        key[12]=0x0c; key[13]=0x0d; key[14]=0x0e; key[15]=0x0f
+        key[16]=0x10; key[17]=0x11; key[18]=0x12; key[19]=0x13
+        key[20]=0x14; key[21]=0x15; key[22]=0x16; key[23]=0x17
+        key[24]=0x18; key[25]=0x19; key[26]=0x1a; key[27]=0x1b
+        key[28]=0x1c; key[29]=0x1d; key[30]=0x1e; key[31]=0x1f
+        this.cc.SetKey(key)
+
+        // nonce = 00 00 00 00 00 00 00 4a 00 00 00 00, counter = 1 (LE)
+        var ctr: byte[16]
+        ctr[0]=0x00; ctr[1]=0x00; ctr[2]=0x00; ctr[3]=0x00
+        ctr[4]=0x00; ctr[5]=0x00; ctr[6]=0x00; ctr[7]=0x4a
+        ctr[8]=0x00; ctr[9]=0x00; ctr[10]=0x00; ctr[11]=0x00
+        ctr[12]=0x01; ctr[13]=0x00; ctr[14]=0x00; ctr[15]=0x00
+        this.cc.SetCounter(ctr)
+
+        // Plaintext "Ladies and Gentlemen of the class of '99: Did you know tha"
+        // (first 64 bytes from RFC 8439 §2.4.2)
+        var pt: byte[64]
+        pt[0]=0x4c; pt[1]=0x61; pt[2]=0x64; pt[3]=0x69
+        pt[4]=0x65; pt[5]=0x73; pt[6]=0x20; pt[7]=0x61
+        pt[8]=0x6e; pt[9]=0x64; pt[10]=0x20; pt[11]=0x47
+        pt[12]=0x65; pt[13]=0x6e; pt[14]=0x74; pt[15]=0x6c
+        pt[16]=0x65; pt[17]=0x6d; pt[18]=0x65; pt[19]=0x6e
+        pt[20]=0x20; pt[21]=0x6f; pt[22]=0x66; pt[23]=0x20
+        pt[24]=0x74; pt[25]=0x68; pt[26]=0x65; pt[27]=0x20
+        pt[28]=0x63; pt[29]=0x6c; pt[30]=0x61; pt[31]=0x73
+        pt[32]=0x73; pt[33]=0x20; pt[34]=0x6f; pt[35]=0x66
+        pt[36]=0x20; pt[37]=0x27; pt[38]=0x39; pt[39]=0x39
+        pt[40]=0x3a; pt[41]=0x20; pt[42]=0x49; pt[43]=0x66
+        pt[44]=0x20; pt[45]=0x49; pt[46]=0x20; pt[47]=0x63
+        pt[48]=0x6f; pt[49]=0x75; pt[50]=0x6c; pt[51]=0x64
+        pt[52]=0x20; pt[53]=0x6f; pt[54]=0x66; pt[55]=0x66
+        pt[56]=0x65; pt[57]=0x72; pt[58]=0x20; pt[59]=0x79
+        pt[60]=0x6f; pt[61]=0x75; pt[62]=0x20; pt[63]=0x6f
+        this.cc.LoadBlock(pt)
+        this.cc.CryptBlock()
+
+        assert this.cc.GetByte(0)  == 0x6e
+        assert this.cc.GetByte(1)  == 0x2e
+        assert this.cc.GetByte(2)  == 0x35
+        assert this.cc.GetByte(3)  == 0x9a
+        assert this.cc.GetByte(4)  == 0x25
+        assert this.cc.GetByte(5)  == 0x68
+        assert this.cc.GetByte(6)  == 0xf9
+        assert this.cc.GetByte(7)  == 0x80
+        assert this.cc.GetByte(8)  == 0x41
+        assert this.cc.GetByte(9)  == 0xba
+        assert this.cc.GetByte(10) == 0x07
+        assert this.cc.GetByte(11) == 0x28
+        assert this.cc.GetByte(12) == 0xdd
+        assert this.cc.GetByte(13) == 0x0d
+        assert this.cc.GetByte(14) == 0x69
+        assert this.cc.GetByte(15) == 0x81
+        assert this.cc.GetByte(16) == 0xe9
+        assert this.cc.GetByte(17) == 0x7e
+        assert this.cc.GetByte(18) == 0x7a
+        assert this.cc.GetByte(19) == 0xec
+        assert this.cc.GetByte(20) == 0x1d
+        assert this.cc.GetByte(21) == 0x43
+        assert this.cc.GetByte(22) == 0x60
+        assert this.cc.GetByte(23) == 0xc2
+        assert this.cc.GetByte(24) == 0x0a
+        assert this.cc.GetByte(25) == 0x27
+        assert this.cc.GetByte(26) == 0xaf
+        assert this.cc.GetByte(27) == 0xcc
+        assert this.cc.GetByte(28) == 0xfd
+        assert this.cc.GetByte(29) == 0x9f
+        assert this.cc.GetByte(30) == 0xae
+        assert this.cc.GetByte(31) == 0x0b
+        assert this.cc.GetByte(32) == 0xf9
+        assert this.cc.GetByte(33) == 0x1b
+        assert this.cc.GetByte(34) == 0x65
+        assert this.cc.GetByte(35) == 0xc5
+        assert this.cc.GetByte(36) == 0x52
+        assert this.cc.GetByte(37) == 0x47
+        assert this.cc.GetByte(38) == 0x33
+        assert this.cc.GetByte(39) == 0xab
+        assert this.cc.GetByte(40) == 0x8f
+        assert this.cc.GetByte(41) == 0x59
+        assert this.cc.GetByte(42) == 0x3d
+        assert this.cc.GetByte(43) == 0xab
+        assert this.cc.GetByte(44) == 0xcd
+        assert this.cc.GetByte(45) == 0x62
+        assert this.cc.GetByte(46) == 0xb3
+        assert this.cc.GetByte(47) == 0x57
+        assert this.cc.GetByte(48) == 0x16
+        assert this.cc.GetByte(49) == 0x39
+        assert this.cc.GetByte(50) == 0xd6
+        assert this.cc.GetByte(51) == 0x24
+        assert this.cc.GetByte(52) == 0xe6
+        assert this.cc.GetByte(53) == 0x51
+        assert this.cc.GetByte(54) == 0x52
+        assert this.cc.GetByte(55) == 0xab
+        assert this.cc.GetByte(56) == 0x8f
+        assert this.cc.GetByte(57) == 0x53
+        assert this.cc.GetByte(58) == 0x0c
+        assert this.cc.GetByte(59) == 0x35
+        assert this.cc.GetByte(60) == 0x9f
+        assert this.cc.GetByte(61) == 0x08
+        assert this.cc.GetByte(62) == 0x61
+        assert this.cc.GetByte(63) == 0xd8
+    }
+
+    // TestDecryptRoundtrip — encrypt then decrypt must recover plaintext.
+    @Test fn TestDecryptRoundtrip()
+    {
+        var key: byte[32]
+        key[0]=0xab; key[1]=0xcd; key[2]=0xef; key[3]=0x01
+        key[4]=0x23; key[5]=0x45; key[6]=0x67; key[7]=0x89
+        key[8]=0xab; key[9]=0xcd; key[10]=0xef; key[11]=0x01
+        key[12]=0x23; key[13]=0x45; key[14]=0x67; key[15]=0x89
+        key[16]=0xab; key[17]=0xcd; key[18]=0xef; key[19]=0x01
+        key[20]=0x23; key[21]=0x45; key[22]=0x67; key[23]=0x89
+        key[24]=0xab; key[25]=0xcd; key[26]=0xef; key[27]=0x01
+        key[28]=0x23; key[29]=0x45; key[30]=0x67; key[31]=0x89
+        this.cc.SetKey(key)
+
+        var ctr: byte[16]
+        ctr[0]=0x00; ctr[1]=0x00; ctr[2]=0x00; ctr[3]=0x00
+        ctr[4]=0x00; ctr[5]=0x00; ctr[6]=0x00; ctr[7]=0x00
+        ctr[8]=0x00; ctr[9]=0x00; ctr[10]=0x00; ctr[11]=0x00
+        ctr[12]=0x01; ctr[13]=0x00; ctr[14]=0x00; ctr[15]=0x00
+        this.cc.SetCounter(ctr)
+
+        // plaintext
+        var pt: byte[64]
+        pt[0]=0x48; pt[1]=0x65; pt[2]=0x6c; pt[3]=0x6c
+        pt[4]=0x6f; pt[5]=0x20; pt[6]=0x57; pt[7]=0x6f
+        pt[8]=0x72; pt[9]=0x6c; pt[10]=0x64; pt[11]=0x21
+        pt[12]=0x00; pt[13]=0x00; pt[14]=0x00; pt[15]=0x00
+        pt[16]=0x00; pt[17]=0x00; pt[18]=0x00; pt[19]=0x00
+        pt[20]=0x00; pt[21]=0x00; pt[22]=0x00; pt[23]=0x00
+        pt[24]=0x00; pt[25]=0x00; pt[26]=0x00; pt[27]=0x00
+        pt[28]=0x00; pt[29]=0x00; pt[30]=0x00; pt[31]=0x00
+        pt[32]=0x00; pt[33]=0x00; pt[34]=0x00; pt[35]=0x00
+        pt[36]=0x00; pt[37]=0x00; pt[38]=0x00; pt[39]=0x00
+        pt[40]=0x00; pt[41]=0x00; pt[42]=0x00; pt[43]=0x00
+        pt[44]=0x00; pt[45]=0x00; pt[46]=0x00; pt[47]=0x00
+        pt[48]=0x00; pt[49]=0x00; pt[50]=0x00; pt[51]=0x00
+        pt[52]=0x00; pt[53]=0x00; pt[54]=0x00; pt[55]=0x00
+        pt[56]=0x00; pt[57]=0x00; pt[58]=0x00; pt[59]=0x00
+        pt[60]=0x00; pt[61]=0x00; pt[62]=0x00; pt[63]=0x00
+        this.cc.LoadBlock(pt)
+        this.cc.CryptBlock()
+        var ct: byte[64] = this.cc.GetBlock()
+
+        // Reset counter to same initial value for decryption.
+        this.cc.SetCounter(ctr)
+        this.cc.LoadBlock(ct)
+        this.cc.CryptBlock()
+
+        assert this.cc.GetByte(0)  == 0x48
+        assert this.cc.GetByte(1)  == 0x65
+        assert this.cc.GetByte(2)  == 0x6c
+        assert this.cc.GetByte(3)  == 0x6c
+        assert this.cc.GetByte(4)  == 0x6f
+        assert this.cc.GetByte(5)  == 0x20
+        assert this.cc.GetByte(6)  == 0x57
+        assert this.cc.GetByte(7)  == 0x6f
+        assert this.cc.GetByte(8)  == 0x72
+        assert this.cc.GetByte(9)  == 0x6c
+        assert this.cc.GetByte(10) == 0x64
+        assert this.cc.GetByte(11) == 0x21
+        assert this.cc.GetByte(12) == 0x00
+    }
+}

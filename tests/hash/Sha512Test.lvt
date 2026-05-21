@@ -1,0 +1,178 @@
+namespace Livt.Crypto.Tests.Hash
+using Livt.Crypto.Hash
+
+
+
+// Tests for Sha512 (NIST FIPS 180-4).
+@Test component Sha512Test
+{
+    sha: Sha512
+
+    new()
+    {
+        this.sha = new Sha512()
+    }
+
+    // NIST FIPS 180-4 Example: SHA-512("abc").
+    // Padded single 128-byte block:
+    //   61 62 63 80  [108 zeros]  [15 zeros] 18
+    // Expected digest (64 bytes):
+    //   dd af 35 a1  93 61 7a ba  cc 41 73 49  ae 20 41 31
+    //   12 e6 fa 4e  89 a9 7e a2  0a 9e ee e6  4b 55 d3 9a
+    //   21 92 99 2a  27 4f c1 a8  36 ba 3c 23  a3 fe eb bd
+    //   45 4d 44 23  64 3c e8 0e  2a 9a c9 4f  a5 4c a4 9f
+    @Test fn TestNistFips180Abc()
+    {
+        this.sha.Reset()
+
+        var msg: byte[128] = [
+            0x61, 0x62, 0x63, 0x80,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x18]
+        this.sha.ProcessBlock(msg)
+
+        var digest: byte[64] = this.sha.GetDigest()
+        assert digest[0]  == 0xdd; assert digest[1]  == 0xaf; assert digest[2]  == 0x35; assert digest[3]  == 0xa1
+        assert digest[4]  == 0x93; assert digest[5]  == 0x61; assert digest[6]  == 0x7a; assert digest[7]  == 0xba
+        assert digest[8]  == 0xcc; assert digest[9]  == 0x41; assert digest[10] == 0x73; assert digest[11] == 0x49
+        assert digest[12] == 0xae; assert digest[13] == 0x20; assert digest[14] == 0x41; assert digest[15] == 0x31
+        assert digest[16] == 0x12; assert digest[17] == 0xe6; assert digest[18] == 0xfa; assert digest[19] == 0x4e
+        assert digest[20] == 0x89; assert digest[21] == 0xa9; assert digest[22] == 0x7e; assert digest[23] == 0xa2
+        assert digest[24] == 0x0a; assert digest[25] == 0x9e; assert digest[26] == 0xee; assert digest[27] == 0xe6
+        assert digest[28] == 0x4b; assert digest[29] == 0x55; assert digest[30] == 0xd3; assert digest[31] == 0x9a
+        assert digest[32] == 0x21; assert digest[33] == 0x92; assert digest[34] == 0x99; assert digest[35] == 0x2a
+        assert digest[36] == 0x27; assert digest[37] == 0x4f; assert digest[38] == 0xc1; assert digest[39] == 0xa8
+        assert digest[40] == 0x36; assert digest[41] == 0xba; assert digest[42] == 0x3c; assert digest[43] == 0x23
+        assert digest[44] == 0xa3; assert digest[45] == 0xfe; assert digest[46] == 0xeb; assert digest[47] == 0xbd
+        assert digest[48] == 0x45; assert digest[49] == 0x4d; assert digest[50] == 0x44; assert digest[51] == 0x23
+        assert digest[52] == 0x64; assert digest[53] == 0x3c; assert digest[54] == 0xe8; assert digest[55] == 0x0e
+        assert digest[56] == 0x2a; assert digest[57] == 0x9a; assert digest[58] == 0xc9; assert digest[59] == 0x4f
+        assert digest[60] == 0xa5; assert digest[61] == 0x4c; assert digest[62] == 0xa4; assert digest[63] == 0x9f
+    }
+
+    // SHA-512 of the empty string.
+    // Padded single 128-byte block:
+    //   80 [127 zeros]
+    // Expected digest (64 bytes):
+    //   cf 83 e1 35  7e ef b8 bd  f1 54 28 50  d6 6d 80 07
+    //   d6 20 e4 05  0b 57 15 dc  83 f4 a9 21  d3 6c e9 ce
+    //   47 d0 d1 3c  5d 85 f2 b0  ff 83 18 d2  87 7e ec 2f
+    //   63 b9 31 bd  47 41 7a 81  a5 38 32 7a  f9 27 da 3e
+    @Test fn TestEmptyString()
+    {
+        this.sha.Reset()
+
+        var msg: byte[128] = [
+            0x80, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00]
+        this.sha.ProcessBlock(msg)
+
+        var digest: byte[64] = this.sha.GetDigest()
+        assert digest[0]  == 0xcf; assert digest[1]  == 0x83; assert digest[2]  == 0xe1; assert digest[3]  == 0x35
+        assert digest[4]  == 0x7e; assert digest[5]  == 0xef; assert digest[6]  == 0xb8; assert digest[7]  == 0xbd
+        assert digest[8]  == 0xf1; assert digest[9]  == 0x54; assert digest[10] == 0x28; assert digest[11] == 0x50
+        assert digest[12] == 0xd6; assert digest[13] == 0x6d; assert digest[14] == 0x80; assert digest[15] == 0x07
+        assert digest[16] == 0xd6; assert digest[17] == 0x20; assert digest[18] == 0xe4; assert digest[19] == 0x05
+        assert digest[20] == 0x0b; assert digest[21] == 0x57; assert digest[22] == 0x15; assert digest[23] == 0xdc
+        assert digest[24] == 0x83; assert digest[25] == 0xf4; assert digest[26] == 0xa9; assert digest[27] == 0x21
+        assert digest[28] == 0xd3; assert digest[29] == 0x6c; assert digest[30] == 0xe9; assert digest[31] == 0xce
+        assert digest[32] == 0x47; assert digest[33] == 0xd0; assert digest[34] == 0xd1; assert digest[35] == 0x3c
+        assert digest[36] == 0x5d; assert digest[37] == 0x85; assert digest[38] == 0xf2; assert digest[39] == 0xb0
+        assert digest[40] == 0xff; assert digest[41] == 0x83; assert digest[42] == 0x18; assert digest[43] == 0xd2
+        assert digest[44] == 0x87; assert digest[45] == 0x7e; assert digest[46] == 0xec; assert digest[47] == 0x2f
+        assert digest[48] == 0x63; assert digest[49] == 0xb9; assert digest[50] == 0x31; assert digest[51] == 0xbd
+        assert digest[52] == 0x47; assert digest[53] == 0x41; assert digest[54] == 0x7a; assert digest[55] == 0x81
+        assert digest[56] == 0xa5; assert digest[57] == 0x38; assert digest[58] == 0x32; assert digest[59] == 0x7a
+        assert digest[60] == 0xf9; assert digest[61] == 0x27; assert digest[62] == 0xda; assert digest[63] == 0x3e
+    }
+
+    // Determinism: same block from same initial state produces same digest.
+    @Test fn TestDeterminism()
+    {
+        this.sha.Reset()
+
+        var msg: byte[128] = [
+            0x61, 0x62, 0x63, 0x80,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x18]
+        this.sha.ProcessBlock(msg)
+        var digest1: byte[64] = this.sha.GetDigest()
+
+        this.sha.Reset()
+        this.sha.ProcessBlock(msg)
+        var digest2: byte[64] = this.sha.GetDigest()
+
+        assert digest1[0]  == digest2[0];  assert digest1[1]  == digest2[1]
+        assert digest1[2]  == digest2[2];  assert digest1[3]  == digest2[3]
+        assert digest1[4]  == digest2[4];  assert digest1[5]  == digest2[5]
+        assert digest1[6]  == digest2[6];  assert digest1[7]  == digest2[7]
+        assert digest1[8]  == digest2[8];  assert digest1[9]  == digest2[9]
+        assert digest1[10] == digest2[10]; assert digest1[11] == digest2[11]
+        assert digest1[12] == digest2[12]; assert digest1[13] == digest2[13]
+        assert digest1[14] == digest2[14]; assert digest1[15] == digest2[15]
+        assert digest1[16] == digest2[16]; assert digest1[17] == digest2[17]
+        assert digest1[18] == digest2[18]; assert digest1[19] == digest2[19]
+        assert digest1[20] == digest2[20]; assert digest1[21] == digest2[21]
+        assert digest1[22] == digest2[22]; assert digest1[23] == digest2[23]
+        assert digest1[24] == digest2[24]; assert digest1[25] == digest2[25]
+        assert digest1[26] == digest2[26]; assert digest1[27] == digest2[27]
+        assert digest1[28] == digest2[28]; assert digest1[29] == digest2[29]
+        assert digest1[30] == digest2[30]; assert digest1[31] == digest2[31]
+        assert digest1[32] == digest2[32]; assert digest1[33] == digest2[33]
+        assert digest1[34] == digest2[34]; assert digest1[35] == digest2[35]
+        assert digest1[36] == digest2[36]; assert digest1[37] == digest2[37]
+        assert digest1[38] == digest2[38]; assert digest1[39] == digest2[39]
+        assert digest1[40] == digest2[40]; assert digest1[41] == digest2[41]
+        assert digest1[42] == digest2[42]; assert digest1[43] == digest2[43]
+        assert digest1[44] == digest2[44]; assert digest1[45] == digest2[45]
+        assert digest1[46] == digest2[46]; assert digest1[47] == digest2[47]
+        assert digest1[48] == digest2[48]; assert digest1[49] == digest2[49]
+        assert digest1[50] == digest2[50]; assert digest1[51] == digest2[51]
+        assert digest1[52] == digest2[52]; assert digest1[53] == digest2[53]
+        assert digest1[54] == digest2[54]; assert digest1[55] == digest2[55]
+        assert digest1[56] == digest2[56]; assert digest1[57] == digest2[57]
+        assert digest1[58] == digest2[58]; assert digest1[59] == digest2[59]
+        assert digest1[60] == digest2[60]; assert digest1[61] == digest2[61]
+        assert digest1[62] == digest2[62]; assert digest1[63] == digest2[63]
+    }
+}

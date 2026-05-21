@@ -1,0 +1,159 @@
+namespace Livt.Crypto.Tests.Aes
+using Livt.Crypto.Aes
+
+
+
+@Test
+component AesCtr128Test
+{
+    ctr: Ctr128
+
+    new()
+    {
+        this.ctr = new Ctr128()
+    }
+
+    // -----------------------------------------------------------------------
+    // NIST SP 800-38A Appendix F.5.1, AES-128 CTR
+    // Key:        2b7e151628aed2a6abf7158809cf4f3c
+    // Counter[1]: f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff
+    // OB[1]:      ec8cdf7398607cb0f2d21675ea9ea1e4
+    // PT[1]:      6bc1bee22e409f96e93d7e117393172a  CT[1]: 874d6191b620e3261bef6864990db6ce
+    // Counter[2]: f0f1f2f3f4f5f6f7f8f9fafbfcfdff00
+    // OB[2]:      362b7c3c67735163 18a077d7fc5073ae
+    // PT[2]:      ae2d8a571e03ac9c9eb76fac45af8e51  CT[2]: 9806f66b7970fdff8617187bb9fffdff
+    // -----------------------------------------------------------------------
+
+    // NIST SP 800-38A F.5.1 CTR-AES128 — Block 1 encryption.
+    @Test
+    fn TestNistSp80038ABlock1()
+    {
+        var key: byte[16] = [
+            0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,
+            0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c]
+
+        var counter: byte[16] = [
+            0xf0, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7,
+            0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd, 0xfe, 0xff]
+
+        var pt: byte[16] = [
+            0x6b, 0xc1, 0xbe, 0xe2, 0x2e, 0x40, 0x9f, 0x96,
+            0xe9, 0x3d, 0x7e, 0x11, 0x73, 0x93, 0x17, 0x2a]
+
+        this.ctr.SetKey(key)
+        this.ctr.SetCounter(counter)
+        this.ctr.LoadBlock(pt)
+        this.ctr.CryptBlock()
+
+        var ct: byte[16] = this.ctr.GetBlock()
+        assert ct[0]  == 0x87
+        assert ct[1]  == 0x4d
+        assert ct[2]  == 0x61
+        assert ct[3]  == 0x91
+        assert ct[4]  == 0xb6
+        assert ct[5]  == 0x20
+        assert ct[6]  == 0xe3
+        assert ct[7]  == 0x26
+        assert ct[8]  == 0x1b
+        assert ct[9]  == 0xef
+        assert ct[10] == 0x68
+        assert ct[11] == 0x64
+        assert ct[12] == 0x99
+        assert ct[13] == 0x0d
+        assert ct[14] == 0xb6
+        assert ct[15] == 0xce
+    }
+
+    // NIST SP 800-38A F.5.1 CTR-AES128 — Blocks 1 and 2 (tests counter increment).
+    @Test
+    fn TestNistSp80038ABlock2()
+    {
+        var key: byte[16] = [
+            0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,
+            0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c]
+
+        var counter: byte[16] = [
+            0xf0, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7,
+            0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd, 0xfe, 0xff]
+
+        var pt1: byte[16] = [
+            0x6b, 0xc1, 0xbe, 0xe2, 0x2e, 0x40, 0x9f, 0x96,
+            0xe9, 0x3d, 0x7e, 0x11, 0x73, 0x93, 0x17, 0x2a]
+
+        var pt2: byte[16] = [
+            0xae, 0x2d, 0x8a, 0x57, 0x1e, 0x03, 0xac, 0x9c,
+            0x9e, 0xb7, 0x6f, 0xac, 0x45, 0xaf, 0x8e, 0x51]
+
+        this.ctr.SetKey(key)
+        this.ctr.SetCounter(counter)
+
+        this.ctr.LoadBlock(pt1)
+        this.ctr.CryptBlock()
+
+        this.ctr.LoadBlock(pt2)
+        this.ctr.CryptBlock()
+
+        var ct2: byte[16] = this.ctr.GetBlock()
+        assert ct2[0]  == 0x98
+        assert ct2[1]  == 0x06
+        assert ct2[2]  == 0xf6
+        assert ct2[3]  == 0x6b
+        assert ct2[4]  == 0x79
+        assert ct2[5]  == 0x70
+        assert ct2[6]  == 0xfd
+        assert ct2[7]  == 0xff
+        assert ct2[8]  == 0x86
+        assert ct2[9]  == 0x17
+        assert ct2[10] == 0x18
+        assert ct2[11] == 0x7b
+        assert ct2[12] == 0xb9
+        assert ct2[13] == 0xff
+        assert ct2[14] == 0xfd
+        assert ct2[15] == 0xff
+    }
+
+    // CTR decrypt is the same operation as encrypt.
+    @Test
+    fn TestDecryptRoundtrip()
+    {
+        var key: byte[16] = [
+            0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,
+            0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c]
+
+        var counter: byte[16] = [
+            0xf0, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7,
+            0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd, 0xfe, 0xff]
+
+        var pt: byte[16] = [
+            0x6b, 0xc1, 0xbe, 0xe2, 0x2e, 0x40, 0x9f, 0x96,
+            0xe9, 0x3d, 0x7e, 0x11, 0x73, 0x93, 0x17, 0x2a]
+
+        this.ctr.SetKey(key)
+        this.ctr.SetCounter(counter)
+        this.ctr.LoadBlock(pt)
+        this.ctr.CryptBlock()
+        var ct: byte[16] = this.ctr.GetBlock()
+
+        this.ctr.SetCounter(counter)
+        this.ctr.LoadBlock(ct)
+        this.ctr.CryptBlock()
+
+        var recovered: byte[16] = this.ctr.GetBlock()
+        assert recovered[0]  == 0x6b
+        assert recovered[1]  == 0xc1
+        assert recovered[2]  == 0xbe
+        assert recovered[3]  == 0xe2
+        assert recovered[4]  == 0x2e
+        assert recovered[5]  == 0x40
+        assert recovered[6]  == 0x9f
+        assert recovered[7]  == 0x96
+        assert recovered[8]  == 0xe9
+        assert recovered[9]  == 0x3d
+        assert recovered[10] == 0x7e
+        assert recovered[11] == 0x11
+        assert recovered[12] == 0x73
+        assert recovered[13] == 0x93
+        assert recovered[14] == 0x17
+        assert recovered[15] == 0x2a
+    }
+}

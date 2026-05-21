@@ -1,0 +1,429 @@
+namespace Livt.Crypto.Tests.Aes
+using Livt.Crypto.Aes
+
+
+
+@Test
+component Aes256Test
+{
+    aes: EncryptBlock256
+
+    new()
+    {
+        this.aes = new EncryptBlock256()
+    }
+
+    // NIST FIPS 197 Appendix C.3 AES-256 test vector.
+    // Key:        000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
+    // Plaintext:  00112233445566778899aabbccddeeff
+    // Ciphertext: 8ea2b7ca516745bfeafc49904b496089
+    // Verify: echo "00112233445566778899aabbccddeeff" | xxd -r -p | openssl enc -aes-256-ecb -K 000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f -nopad 2>/dev/null | xxd -p
+    @Test
+    fn TestNistFips197()
+    {
+        var key: byte[32] = [
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+            0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+            0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
+            0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f]
+
+        var plaintext: byte[16] = [
+            0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
+            0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff]
+
+        this.aes.SetKey(key)
+        this.aes.LoadBlock(plaintext)
+        this.aes.EncryptBlock()
+
+        var ct: byte[16] = this.aes.GetBlock()
+        assert ct[0] == 0x8e
+        assert ct[1] == 0xa2
+        assert ct[2] == 0xb7
+        assert ct[3] == 0xca
+        assert ct[4] == 0x51
+        assert ct[5] == 0x67
+        assert ct[6] == 0x45
+        assert ct[7] == 0xbf
+        assert ct[8] == 0xea
+        assert ct[9] == 0xfc
+        assert ct[10] == 0x49
+        assert ct[11] == 0x90
+        assert ct[12] == 0x4b
+        assert ct[13] == 0x49
+        assert ct[14] == 0x60
+        assert ct[15] == 0x89
+    }
+
+    // NIST SP 800-38A Appendix F.1.5 AES-256 ECB — two blocks with the same key,
+    // verifying that EncryptBlock produces correct output on successive calls.
+    // Key:         603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4
+    // Plaintext 1: 6bc1bee22e409f96e93d7e117393172a
+    // Ciphertext 1: f3eed1bdb5d2a03c064b5a7e3db181f8
+    // Verify: echo "6bc1bee22e409f96e93d7e117393172a" | xxd -r -p | openssl enc -aes-256-ecb -K 603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4 -nopad 2>/dev/null | xxd -p
+    // Plaintext 2: ae2d8a571e03ac9c9eb76fac45af8e51
+    // Ciphertext 2: 591ccb10d410ed26dc5ba74a31362870
+    // Verify: echo "ae2d8a571e03ac9c9eb76fac45af8e51" | xxd -r -p | openssl enc -aes-256-ecb -K 603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4 -nopad 2>/dev/null | xxd -p
+    @Test
+    fn TestNistSp80038A()
+    {
+        var key2: byte[32] = [
+            0x60, 0x3d, 0xeb, 0x10, 0x15, 0xca, 0x71, 0xbe,
+            0x2b, 0x73, 0xae, 0xf0, 0x85, 0x7d, 0x77, 0x81,
+            0x1f, 0x35, 0x2c, 0x07, 0x3b, 0x61, 0x08, 0xd7,
+            0x2d, 0x98, 0x10, 0xa3, 0x09, 0x14, 0xdf, 0xf4]
+
+        var pt1: byte[16] = [
+            0x6b, 0xc1, 0xbe, 0xe2, 0x2e, 0x40, 0x9f, 0x96,
+            0xe9, 0x3d, 0x7e, 0x11, 0x73, 0x93, 0x17, 0x2a]
+
+        this.aes.SetKey(key2)
+        this.aes.LoadBlock(pt1)
+        this.aes.EncryptBlock()
+
+        var ct1: byte[16] = this.aes.GetBlock()
+        assert ct1[0] == 0xf3
+        assert ct1[1] == 0xee
+        assert ct1[2] == 0xd1
+        assert ct1[3] == 0xbd
+        assert ct1[4] == 0xb5
+        assert ct1[5] == 0xd2
+        assert ct1[6] == 0xa0
+        assert ct1[7] == 0x3c
+        assert ct1[8] == 0x06
+        assert ct1[9] == 0x4b
+        assert ct1[10] == 0x5a
+        assert ct1[11] == 0x7e
+        assert ct1[12] == 0x3d
+        assert ct1[13] == 0xb1
+        assert ct1[14] == 0x81
+        assert ct1[15] == 0xf8
+
+        // Second block with same key — verifies no stale state between calls.
+        var pt2: byte[16] = [
+            0xae, 0x2d, 0x8a, 0x57, 0x1e, 0x03, 0xac, 0x9c,
+            0x9e, 0xb7, 0x6f, 0xac, 0x45, 0xaf, 0x8e, 0x51]
+
+        this.aes.LoadBlock(pt2)
+        this.aes.EncryptBlock()
+
+        var ct2: byte[16] = this.aes.GetBlock()
+        assert ct2[0] == 0x59
+        assert ct2[1] == 0x1c
+        assert ct2[2] == 0xcb
+        assert ct2[3] == 0x10
+        assert ct2[4] == 0xd4
+        assert ct2[5] == 0x10
+        assert ct2[6] == 0xed
+        assert ct2[7] == 0x26
+        assert ct2[8] == 0xdc
+        assert ct2[9] == 0x5b
+        assert ct2[10] == 0xa7
+        assert ct2[11] == 0x4a
+        assert ct2[12] == 0x31
+        assert ct2[13] == 0x36
+        assert ct2[14] == 0x28
+        assert ct2[15] == 0x70
+    }
+
+    // All-zero 256-bit key with all-zero plaintext.
+    // Key:        0000000000000000000000000000000000000000000000000000000000000000
+    // Plaintext:  00000000000000000000000000000000
+    // Ciphertext: dc95c078a2408989ad48a21492842087
+    // Verify: echo "00000000000000000000000000000000" | xxd -r -p | openssl enc -aes-256-ecb -K 0000000000000000000000000000000000000000000000000000000000000000 -nopad 2>/dev/null | xxd -p
+    @Test
+    fn TestAllZeroKeyAndPlaintext()
+    {
+        var key3: byte[32] = [
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+
+        var pt3: byte[16] = [
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+
+        this.aes.SetKey(key3)
+        this.aes.LoadBlock(pt3)
+        this.aes.EncryptBlock()
+
+        var ct: byte[16] = this.aes.GetBlock()
+        assert ct[0] == 0xdc
+        assert ct[1] == 0x95
+        assert ct[2] == 0xc0
+        assert ct[3] == 0x78
+        assert ct[4] == 0xa2
+        assert ct[5] == 0x40
+        assert ct[6] == 0x89
+        assert ct[7] == 0x89
+        assert ct[8] == 0xad
+        assert ct[9] == 0x48
+        assert ct[10] == 0xa2
+        assert ct[11] == 0x14
+        assert ct[12] == 0x92
+        assert ct[13] == 0x84
+        assert ct[14] == 0x20
+        assert ct[15] == 0x87
+    }
+
+    // NIST SP 800-38A Appendix F.1.5 AES-256 ECB — blocks 3 and 4, same key as
+    // TestNistSp80038A.  Verifies that EncryptBlock produces the correct output
+    // for additional successive blocks with the same key schedule.
+    // Key:         603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4
+    // Plaintext 3: 30c81c46a35ce411e5fbc1191a0a52ef
+    // Ciphertext 3: b6ed21b99ca6f4f9f153e7b1beafed1d
+    // Verify: echo "30c81c46a35ce411e5fbc1191a0a52ef" | xxd -r -p | openssl enc -aes-256-ecb -K 603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4 -nopad 2>/dev/null | xxd -p
+    // Plaintext 4: f69f2445df4f9b17ad2b417be66c3710
+    // Ciphertext 4: 23304b7a39f9f3ff067d8d8f9e24ecc7
+    // Verify: echo "f69f2445df4f9b17ad2b417be66c3710" | xxd -r -p | openssl enc -aes-256-ecb -K 603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4 -nopad 2>/dev/null | xxd -p
+    @Test
+    fn TestNistSp80038ABlocks3And4()
+    {
+        var key: byte[32] = [
+            0x60, 0x3d, 0xeb, 0x10, 0x15, 0xca, 0x71, 0xbe,
+            0x2b, 0x73, 0xae, 0xf0, 0x85, 0x7d, 0x77, 0x81,
+            0x1f, 0x35, 0x2c, 0x07, 0x3b, 0x61, 0x08, 0xd7,
+            0x2d, 0x98, 0x10, 0xa3, 0x09, 0x14, 0xdf, 0xf4]
+
+        var pt3: byte[16] = [
+            0x30, 0xc8, 0x1c, 0x46, 0xa3, 0x5c, 0xe4, 0x11,
+            0xe5, 0xfb, 0xc1, 0x19, 0x1a, 0x0a, 0x52, 0xef]
+
+        this.aes.SetKey(key)
+        this.aes.LoadBlock(pt3)
+        this.aes.EncryptBlock()
+
+        var ct1: byte[16] = this.aes.GetBlock()
+        assert ct1[0] == 0xb6
+        assert ct1[1] == 0xed
+        assert ct1[2] == 0x21
+        assert ct1[3] == 0xb9
+        assert ct1[4] == 0x9c
+        assert ct1[5] == 0xa6
+        assert ct1[6] == 0xf4
+        assert ct1[7] == 0xf9
+        assert ct1[8] == 0xf1
+        assert ct1[9] == 0x53
+        assert ct1[10] == 0xe7
+        assert ct1[11] == 0xb1
+        assert ct1[12] == 0xbe
+        assert ct1[13] == 0xaf
+        assert ct1[14] == 0xed
+        assert ct1[15] == 0x1d
+
+        // Block 4 — same key, no SetKey needed.
+        var pt4: byte[16] = [
+            0xf6, 0x9f, 0x24, 0x45, 0xdf, 0x4f, 0x9b, 0x17,
+            0xad, 0x2b, 0x41, 0x7b, 0xe6, 0x6c, 0x37, 0x10]
+
+        this.aes.LoadBlock(pt4)
+        this.aes.EncryptBlock()
+
+        var ct2: byte[16] = this.aes.GetBlock()
+        assert ct2[0] == 0x23
+        assert ct2[1] == 0x30
+        assert ct2[2] == 0x4b
+        assert ct2[3] == 0x7a
+        assert ct2[4] == 0x39
+        assert ct2[5] == 0xf9
+        assert ct2[6] == 0xf3
+        assert ct2[7] == 0xff
+        assert ct2[8] == 0x06
+        assert ct2[9] == 0x7d
+        assert ct2[10] == 0x8d
+        assert ct2[11] == 0x8f
+        assert ct2[12] == 0x9e
+        assert ct2[13] == 0x24
+        assert ct2[14] == 0xec
+        assert ct2[15] == 0xc7
+    }
+
+    // User behaviour: encrypting the same plaintext with the same key a second
+    // time must produce identical ciphertext.  Verifies that LoadBlock + EncryptBlock
+    // leave no stale state that would corrupt a repeated call.
+    // Uses the NIST FIPS 197 Appendix C.3 vector.
+    // Key:       000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
+    // Plaintext: 00112233445566778899aabbccddeeff
+    // Expected:  8ea2b7ca516745bfeafc49904b496089 (both encryptions)
+    @Test
+    fn TestDeterminism()
+    {
+        var key: byte[32] = [
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+            0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+            0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
+            0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f]
+
+        var plaintext: byte[16] = [
+            0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
+            0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff]
+
+        this.aes.SetKey(key)
+
+        // First encryption.
+        this.aes.LoadBlock(plaintext)
+        this.aes.EncryptBlock()
+
+        var ct1: byte[16] = this.aes.GetBlock()
+        assert ct1[0] == 0x8e
+        assert ct1[1] == 0xa2
+        assert ct1[2] == 0xb7
+        assert ct1[3] == 0xca
+        assert ct1[4] == 0x51
+        assert ct1[5] == 0x67
+        assert ct1[6] == 0x45
+        assert ct1[7] == 0xbf
+        assert ct1[8] == 0xea
+        assert ct1[9] == 0xfc
+        assert ct1[10] == 0x49
+        assert ct1[11] == 0x90
+        assert ct1[12] == 0x4b
+        assert ct1[13] == 0x49
+        assert ct1[14] == 0x60
+        assert ct1[15] == 0x89
+
+        // Second encryption of the same plaintext — must produce the same ciphertext.
+        this.aes.LoadBlock(plaintext)
+        this.aes.EncryptBlock()
+
+        var ct2: byte[16] = this.aes.GetBlock()
+        assert ct2[0] == 0x8e
+        assert ct2[1] == 0xa2
+        assert ct2[2] == 0xb7
+        assert ct2[3] == 0xca
+        assert ct2[4] == 0x51
+        assert ct2[5] == 0x67
+        assert ct2[6] == 0x45
+        assert ct2[7] == 0xbf
+        assert ct2[8] == 0xea
+        assert ct2[9] == 0xfc
+        assert ct2[10] == 0x49
+        assert ct2[11] == 0x90
+        assert ct2[12] == 0x4b
+        assert ct2[13] == 0x49
+        assert ct2[14] == 0x60
+        assert ct2[15] == 0x89
+    }
+
+    // User behaviour: calling SetKey between encryptions must produce output
+    // consistent with the new key.  Uses two independent NIST vectors:
+    //   key1 (FIPS 197) + plaintext1 → ciphertext1 = 8ea2b7ca516745bfeafc49904b496089
+    //   key2 (all-zero) + plaintext2 (all-zero) → ciphertext2 = dc95c078a2408989ad48a21492842087
+    @Test
+    fn TestKeyChangeWorkflow()
+    {
+        // First encryption — NIST FIPS 197 Appendix C.3.
+        var key1: byte[32] = [
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+            0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+            0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
+            0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f]
+
+        var pt1: byte[16] = [
+            0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
+            0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff]
+
+        this.aes.SetKey(key1)
+        this.aes.LoadBlock(pt1)
+        this.aes.EncryptBlock()
+
+        var ct1: byte[16] = this.aes.GetBlock()
+        assert ct1[0] == 0x8e
+        assert ct1[1] == 0xa2
+        assert ct1[2] == 0xb7
+        assert ct1[3] == 0xca
+        assert ct1[4] == 0x51
+        assert ct1[5] == 0x67
+        assert ct1[6] == 0x45
+        assert ct1[7] == 0xbf
+        assert ct1[8] == 0xea
+        assert ct1[9] == 0xfc
+        assert ct1[10] == 0x49
+        assert ct1[11] == 0x90
+        assert ct1[12] == 0x4b
+        assert ct1[13] == 0x49
+        assert ct1[14] == 0x60
+        assert ct1[15] == 0x89
+
+        // Change key and encrypt a different block — all-zero key + all-zero plaintext.
+        var key2: byte[32] = [
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+
+        var pt2: byte[16] = [
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+
+        this.aes.SetKey(key2)
+        this.aes.LoadBlock(pt2)
+        this.aes.EncryptBlock()
+
+        var ct2: byte[16] = this.aes.GetBlock()
+        assert ct2[0] == 0xdc
+        assert ct2[1] == 0x95
+        assert ct2[2] == 0xc0
+        assert ct2[3] == 0x78
+        assert ct2[4] == 0xa2
+        assert ct2[5] == 0x40
+        assert ct2[6] == 0x89
+        assert ct2[7] == 0x89
+        assert ct2[8] == 0xad
+        assert ct2[9] == 0x48
+        assert ct2[10] == 0xa2
+        assert ct2[11] == 0x14
+        assert ct2[12] == 0x92
+        assert ct2[13] == 0x84
+        assert ct2[14] == 0x20
+        assert ct2[15] == 0x87
+    }
+
+    // User behaviour: ClearKey zeroes the round key schedule so that key
+    // material does not persist after a session ends.  Verifies by clearing
+    // the key, loading a fresh key, and confirming correct ciphertext output.
+    // A corrupted key schedule would produce wrong ciphertext.
+    // Key:      000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
+    // Expected: 8ea2b7ca516745bfeafc49904b496089 (NIST FIPS 197 Appendix C.3)
+    @Test
+    fn TestClearKey()
+    {
+        var key: byte[32] = [
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+            0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+            0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
+            0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f]
+
+        var plaintext: byte[16] = [
+            0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
+            0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff]
+
+        // Establish key, then clear it to simulate end-of-session zeroization.
+        this.aes.SetKey(key)
+        this.aes.ClearKey()
+
+        // Reload the same key and encrypt — must produce correct NIST ciphertext.
+        // If ClearKey left the schedule in a bad state this will produce wrong output.
+        this.aes.SetKey(key)
+        this.aes.LoadBlock(plaintext)
+        this.aes.EncryptBlock()
+
+        var ct: byte[16] = this.aes.GetBlock()
+        assert ct[0] == 0x8e
+        assert ct[1] == 0xa2
+        assert ct[2] == 0xb7
+        assert ct[3] == 0xca
+        assert ct[4] == 0x51
+        assert ct[5] == 0x67
+        assert ct[6] == 0x45
+        assert ct[7] == 0xbf
+        assert ct[8] == 0xea
+        assert ct[9] == 0xfc
+        assert ct[10] == 0x49
+        assert ct[11] == 0x90
+        assert ct[12] == 0x4b
+        assert ct[13] == 0x49
+        assert ct[14] == 0x60
+        assert ct[15] == 0x89
+    }
+}

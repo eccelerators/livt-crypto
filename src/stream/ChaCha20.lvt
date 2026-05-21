@@ -1,0 +1,704 @@
+namespace Livt.Crypto.Stream
+
+// ChaCha20 stream cipher — single-block interface (RFC 8439).
+// Produces one 64-byte keystream block from a 256-bit key, 32-bit counter,
+// and 96-bit nonce, then XORs it with the input block.
+//
+// State layout (little-endian 32-bit words):
+//   s0..s3  = "expa", "nd 3", "2-by", "te k"  (constants)
+//   s4..s11 = key (8 × 32-bit LE words)
+//   s12     = counter (32-bit LE)
+//   s13..s15= nonce (3 × 32-bit LE words)
+//
+// Usage:
+//   1. SetKey(key[32])
+//   2. SetCounter(counter[16])  — bytes 0-11 nonce, bytes 12-15 counter (LE)
+//   3. LoadBlock(block[64])
+//   4. CryptBlock()
+//   5. GetBlock() byte[64]     — ciphertext (or plaintext when decrypting)
+component ChaCha20
+{
+    public const KEY_SIZE:   int = 32
+    public const BLOCK_SIZE: int = 64
+    public const NONCE_SIZE: int = 12
+
+    // Key stored as 32 bytes (little-endian 32-bit word layout).
+    key: byte[32]
+
+    // Counter (little-endian 4 bytes) and nonce (little-endian 12 bytes).
+    ctr0: int
+    ctr1: int
+    ctr2: int
+    ctr3: int
+    n0:  int
+    n1:  int
+    n2:  int
+    n3:  int
+    n4:  int
+    n5:  int
+    n6:  int
+    n7:  int
+    n8:  int
+    n9:  int
+    n10: int
+    n11: int
+
+    // Input plaintext / ciphertext block.
+    blk: byte[64]
+
+    // Output block.
+    outBlk: byte[64]
+
+    new()
+    {
+    }
+
+    // -----------------------------------------------------------------------
+    // Public API
+    // -----------------------------------------------------------------------
+
+    public fn SetKey(key: byte[32])
+    {
+        for (var i = 0; i < 32; i++)
+        {
+            this.key[i] = key[i]
+        }
+    }
+
+    // SetCounter: bytes 0-11 = nonce, bytes 12-15 = 32-bit counter (little-endian).
+    public fn SetCounter(counter: byte[16])
+    {
+        var bn0:  byte = counter[0];  var in0:  int = bn0  as int
+        var bn1:  byte = counter[1];  var in1:  int = bn1  as int
+        var bn2:  byte = counter[2];  var in2:  int = bn2  as int
+        var bn3:  byte = counter[3];  var in3:  int = bn3  as int
+        var bn4:  byte = counter[4];  var in4:  int = bn4  as int
+        var bn5:  byte = counter[5];  var in5:  int = bn5  as int
+        var bn6:  byte = counter[6];  var in6:  int = bn6  as int
+        var bn7:  byte = counter[7];  var in7:  int = bn7  as int
+        var bn8:  byte = counter[8];  var in8:  int = bn8  as int
+        var bn9:  byte = counter[9];  var in9:  int = bn9  as int
+        var bn10: byte = counter[10]; var in10: int = bn10 as int
+        var bn11: byte = counter[11]; var in11: int = bn11 as int
+        var bc0:  byte = counter[12]; var ic0:  int = bc0  as int
+        var bc1:  byte = counter[13]; var ic1:  int = bc1  as int
+        var bc2:  byte = counter[14]; var ic2:  int = bc2  as int
+        var bc3:  byte = counter[15]; var ic3:  int = bc3  as int
+        this.n0  = in0
+        this.n1  = in1
+        this.n2  = in2
+        this.n3  = in3
+        this.n4  = in4
+        this.n5  = in5
+        this.n6  = in6
+        this.n7  = in7
+        this.n8  = in8
+        this.n9  = in9
+        this.n10 = in10
+        this.n11 = in11
+        this.ctr0 = ic0
+        this.ctr1 = ic1
+        this.ctr2 = ic2
+        this.ctr3 = ic3
+    }
+
+    public fn LoadBlock(blk: byte[64])
+    {
+        for (var i = 0; i < 64; i++)
+        {
+            this.blk[i] = blk[i]
+        }
+    }
+
+    // CryptBlock: generate the 64-byte keystream block, XOR with the input,
+    // store in outBlk, then increment the 32-bit counter (little-endian).
+    public fn CryptBlock()
+    {
+        // ---------------------------------------------------------------
+        // Build the initial state from constants, key, counter, and nonce.
+        // All words are little-endian.
+        // ---------------------------------------------------------------
+        // State words s0..s15 stored as 4 bytes each: s_a (LS byte) .. s_d (MS byte).
+
+        // s0..s3 = constants "expa" "nd 3" "2-by" "te k"
+        var s0a: int = 0x65; var s0b: int = 0x78; var s0c: int = 0x70; var s0d: int = 0x61
+        var s1a: int = 0x6e; var s1b: int = 0x64; var s1c: int = 0x20; var s1d: int = 0x33
+        var s2a: int = 0x32; var s2b: int = 0x2d; var s2c: int = 0x62; var s2d: int = 0x79
+        var s3a: int = 0x74; var s3b: int = 0x65; var s3c: int = 0x20; var s3d: int = 0x6b
+
+        // s4..s11 = key bytes 0..31
+        var bk0:  byte = this.key[0];  var bk1:  byte = this.key[1];  var bk2:  byte = this.key[2];  var bk3:  byte = this.key[3]
+        var bk4:  byte = this.key[4];  var bk5:  byte = this.key[5];  var bk6:  byte = this.key[6];  var bk7:  byte = this.key[7]
+        var bk8:  byte = this.key[8];  var bk9:  byte = this.key[9];  var bk10: byte = this.key[10]; var bk11: byte = this.key[11]
+        var bk12: byte = this.key[12]; var bk13: byte = this.key[13]; var bk14: byte = this.key[14]; var bk15: byte = this.key[15]
+        var bk16: byte = this.key[16]; var bk17: byte = this.key[17]; var bk18: byte = this.key[18]; var bk19: byte = this.key[19]
+        var bk20: byte = this.key[20]; var bk21: byte = this.key[21]; var bk22: byte = this.key[22]; var bk23: byte = this.key[23]
+        var bk24: byte = this.key[24]; var bk25: byte = this.key[25]; var bk26: byte = this.key[26]; var bk27: byte = this.key[27]
+        var bk28: byte = this.key[28]; var bk29: byte = this.key[29]; var bk30: byte = this.key[30]; var bk31: byte = this.key[31]
+
+        var s4a: int = bk0  as int; var s4b: int = bk1  as int; var s4c: int = bk2  as int; var s4d: int = bk3  as int
+        var s5a: int = bk4  as int; var s5b: int = bk5  as int; var s5c: int = bk6  as int; var s5d: int = bk7  as int
+        var s6a: int = bk8  as int; var s6b: int = bk9  as int; var s6c: int = bk10 as int; var s6d: int = bk11 as int
+        var s7a: int = bk12 as int; var s7b: int = bk13 as int; var s7c: int = bk14 as int; var s7d: int = bk15 as int
+        var s8a: int = bk16 as int; var s8b: int = bk17 as int; var s8c: int = bk18 as int; var s8d: int = bk19 as int
+        var s9a: int = bk20 as int; var s9b: int = bk21 as int; var s9c: int = bk22 as int; var s9d: int = bk23 as int
+        var s10a: int = bk24 as int; var s10b: int = bk25 as int; var s10c: int = bk26 as int; var s10d: int = bk27 as int
+        var s11a: int = bk28 as int; var s11b: int = bk29 as int; var s11c: int = bk30 as int; var s11d: int = bk31 as int
+
+        // s12 = counter (little-endian)
+        var s12a: int = this.ctr0; var s12b: int = this.ctr1; var s12c: int = this.ctr2; var s12d: int = this.ctr3
+
+        // s13..s15 = nonce (little-endian)
+        var s13a: int = this.n0; var s13b: int = this.n1; var s13c: int = this.n2; var s13d: int = this.n3
+        var s14a: int = this.n4; var s14b: int = this.n5; var s14c: int = this.n6; var s14d: int = this.n7
+        var s15a: int = this.n8; var s15b: int = this.n9; var s15c: int = this.n10; var s15d: int = this.n11
+
+        // Save initial state for final addition.
+        var i0a: int = s0a; var i0b: int = s0b; var i0c: int = s0c; var i0d: int = s0d
+        var i1a: int = s1a; var i1b: int = s1b; var i1c: int = s1c; var i1d: int = s1d
+        var i2a: int = s2a; var i2b: int = s2b; var i2c: int = s2c; var i2d: int = s2d
+        var i3a: int = s3a; var i3b: int = s3b; var i3c: int = s3c; var i3d: int = s3d
+        var i4a: int = s4a; var i4b: int = s4b; var i4c: int = s4c; var i4d: int = s4d
+        var i5a: int = s5a; var i5b: int = s5b; var i5c: int = s5c; var i5d: int = s5d
+        var i6a: int = s6a; var i6b: int = s6b; var i6c: int = s6c; var i6d: int = s6d
+        var i7a: int = s7a; var i7b: int = s7b; var i7c: int = s7c; var i7d: int = s7d
+        var i8a: int = s8a; var i8b: int = s8b; var i8c: int = s8c; var i8d: int = s8d
+        var i9a: int = s9a; var i9b: int = s9b; var i9c: int = s9c; var i9d: int = s9d
+        var i10a: int = s10a; var i10b: int = s10b; var i10c: int = s10c; var i10d: int = s10d
+        var i11a: int = s11a; var i11b: int = s11b; var i11c: int = s11c; var i11d: int = s11d
+        var i12a: int = s12a; var i12b: int = s12b; var i12c: int = s12c; var i12d: int = s12d
+        var i13a: int = s13a; var i13b: int = s13b; var i13c: int = s13c; var i13d: int = s13d
+        var i14a: int = s14a; var i14b: int = s14b; var i14c: int = s14c; var i14d: int = s14d
+        var i15a: int = s15a; var i15b: int = s15b; var i15c: int = s15c; var i15d: int = s15d
+
+        // ---------------------------------------------------------------
+        // 20 rounds = 10 double-rounds (column then diagonal).
+        // Each double-round is fully unrolled.
+        // Variables named r_* hold temporaries from QR computations.
+        // ---------------------------------------------------------------
+
+        // Double-round 1
+        // === Column QR(s0, s4, s8, s12) ===
+        var qrw: int[16] = this.QR(s0a,s0b,s0c,s0d, s4a,s4b,s4c,s4d, s8a,s8b,s8c,s8d, s12a,s12b,s12c,s12d)
+        s0a  = qrw[0];  s0b  = qrw[1];  s0c  = qrw[2];  s0d  = qrw[3]
+        s4a  = qrw[4];  s4b  = qrw[5];  s4c  = qrw[6];  s4d  = qrw[7]
+        s8a  = qrw[8];  s8b  = qrw[9];  s8c  = qrw[10]; s8d  = qrw[11]
+        s12a = qrw[12]; s12b = qrw[13]; s12c = qrw[14]; s12d = qrw[15]
+        // === Column QR(s1, s5, s9, s13) ===
+        qrw = this.QR(s1a,s1b,s1c,s1d, s5a,s5b,s5c,s5d, s9a,s9b,s9c,s9d, s13a,s13b,s13c,s13d)
+        s1a  = qrw[0];  s1b  = qrw[1];  s1c  = qrw[2];  s1d  = qrw[3]
+        s5a  = qrw[4];  s5b  = qrw[5];  s5c  = qrw[6];  s5d  = qrw[7]
+        s9a  = qrw[8];  s9b  = qrw[9];  s9c  = qrw[10]; s9d  = qrw[11]
+        s13a = qrw[12]; s13b = qrw[13]; s13c = qrw[14]; s13d = qrw[15]
+        // === Column QR(s2, s6, s10, s14) ===
+        qrw = this.QR(s2a,s2b,s2c,s2d, s6a,s6b,s6c,s6d, s10a,s10b,s10c,s10d, s14a,s14b,s14c,s14d)
+        s2a  = qrw[0];  s2b  = qrw[1];  s2c  = qrw[2];  s2d  = qrw[3]
+        s6a  = qrw[4];  s6b  = qrw[5];  s6c  = qrw[6];  s6d  = qrw[7]
+        s10a = qrw[8];  s10b = qrw[9];  s10c = qrw[10]; s10d = qrw[11]
+        s14a = qrw[12]; s14b = qrw[13]; s14c = qrw[14]; s14d = qrw[15]
+        // === Column QR(s3, s7, s11, s15) ===
+        qrw = this.QR(s3a,s3b,s3c,s3d, s7a,s7b,s7c,s7d, s11a,s11b,s11c,s11d, s15a,s15b,s15c,s15d)
+        s3a  = qrw[0];  s3b  = qrw[1];  s3c  = qrw[2];  s3d  = qrw[3]
+        s7a  = qrw[4];  s7b  = qrw[5];  s7c  = qrw[6];  s7d  = qrw[7]
+        s11a = qrw[8];  s11b = qrw[9];  s11c = qrw[10]; s11d = qrw[11]
+        s15a = qrw[12]; s15b = qrw[13]; s15c = qrw[14]; s15d = qrw[15]
+        // === Diagonal QR(s0, s5, s10, s15) ===
+        qrw = this.QR(s0a,s0b,s0c,s0d, s5a,s5b,s5c,s5d, s10a,s10b,s10c,s10d, s15a,s15b,s15c,s15d)
+        s0a  = qrw[0];  s0b  = qrw[1];  s0c  = qrw[2];  s0d  = qrw[3]
+        s5a  = qrw[4];  s5b  = qrw[5];  s5c  = qrw[6];  s5d  = qrw[7]
+        s10a = qrw[8];  s10b = qrw[9];  s10c = qrw[10]; s10d = qrw[11]
+        s15a = qrw[12]; s15b = qrw[13]; s15c = qrw[14]; s15d = qrw[15]
+        // === Diagonal QR(s1, s6, s11, s12) ===
+        qrw = this.QR(s1a,s1b,s1c,s1d, s6a,s6b,s6c,s6d, s11a,s11b,s11c,s11d, s12a,s12b,s12c,s12d)
+        s1a  = qrw[0];  s1b  = qrw[1];  s1c  = qrw[2];  s1d  = qrw[3]
+        s6a  = qrw[4];  s6b  = qrw[5];  s6c  = qrw[6];  s6d  = qrw[7]
+        s11a = qrw[8];  s11b = qrw[9];  s11c = qrw[10]; s11d = qrw[11]
+        s12a = qrw[12]; s12b = qrw[13]; s12c = qrw[14]; s12d = qrw[15]
+        // === Diagonal QR(s2, s7, s8, s13) ===
+        qrw = this.QR(s2a,s2b,s2c,s2d, s7a,s7b,s7c,s7d, s8a,s8b,s8c,s8d, s13a,s13b,s13c,s13d)
+        s2a  = qrw[0];  s2b  = qrw[1];  s2c  = qrw[2];  s2d  = qrw[3]
+        s7a  = qrw[4];  s7b  = qrw[5];  s7c  = qrw[6];  s7d  = qrw[7]
+        s8a  = qrw[8];  s8b  = qrw[9];  s8c  = qrw[10]; s8d  = qrw[11]
+        s13a = qrw[12]; s13b = qrw[13]; s13c = qrw[14]; s13d = qrw[15]
+        // === Diagonal QR(s3, s4, s9, s14) ===
+        qrw = this.QR(s3a,s3b,s3c,s3d, s4a,s4b,s4c,s4d, s9a,s9b,s9c,s9d, s14a,s14b,s14c,s14d)
+        s3a  = qrw[0];  s3b  = qrw[1];  s3c  = qrw[2];  s3d  = qrw[3]
+        s4a  = qrw[4];  s4b  = qrw[5];  s4c  = qrw[6];  s4d  = qrw[7]
+        s9a  = qrw[8];  s9b  = qrw[9];  s9c  = qrw[10]; s9d  = qrw[11]
+        s14a = qrw[12]; s14b = qrw[13]; s14c = qrw[14]; s14d = qrw[15]
+
+        // Double-round 2
+        qrw = this.QR(s0a,s0b,s0c,s0d, s4a,s4b,s4c,s4d, s8a,s8b,s8c,s8d, s12a,s12b,s12c,s12d)
+        s0a=qrw[0]; s0b=qrw[1]; s0c=qrw[2]; s0d=qrw[3]; s4a=qrw[4]; s4b=qrw[5]; s4c=qrw[6]; s4d=qrw[7]; s8a=qrw[8]; s8b=qrw[9]; s8c=qrw[10]; s8d=qrw[11]; s12a=qrw[12]; s12b=qrw[13]; s12c=qrw[14]; s12d=qrw[15]
+        qrw = this.QR(s1a,s1b,s1c,s1d, s5a,s5b,s5c,s5d, s9a,s9b,s9c,s9d, s13a,s13b,s13c,s13d)
+        s1a=qrw[0]; s1b=qrw[1]; s1c=qrw[2]; s1d=qrw[3]; s5a=qrw[4]; s5b=qrw[5]; s5c=qrw[6]; s5d=qrw[7]; s9a=qrw[8]; s9b=qrw[9]; s9c=qrw[10]; s9d=qrw[11]; s13a=qrw[12]; s13b=qrw[13]; s13c=qrw[14]; s13d=qrw[15]
+        qrw = this.QR(s2a,s2b,s2c,s2d, s6a,s6b,s6c,s6d, s10a,s10b,s10c,s10d, s14a,s14b,s14c,s14d)
+        s2a=qrw[0]; s2b=qrw[1]; s2c=qrw[2]; s2d=qrw[3]; s6a=qrw[4]; s6b=qrw[5]; s6c=qrw[6]; s6d=qrw[7]; s10a=qrw[8]; s10b=qrw[9]; s10c=qrw[10]; s10d=qrw[11]; s14a=qrw[12]; s14b=qrw[13]; s14c=qrw[14]; s14d=qrw[15]
+        qrw = this.QR(s3a,s3b,s3c,s3d, s7a,s7b,s7c,s7d, s11a,s11b,s11c,s11d, s15a,s15b,s15c,s15d)
+        s3a=qrw[0]; s3b=qrw[1]; s3c=qrw[2]; s3d=qrw[3]; s7a=qrw[4]; s7b=qrw[5]; s7c=qrw[6]; s7d=qrw[7]; s11a=qrw[8]; s11b=qrw[9]; s11c=qrw[10]; s11d=qrw[11]; s15a=qrw[12]; s15b=qrw[13]; s15c=qrw[14]; s15d=qrw[15]
+        qrw = this.QR(s0a,s0b,s0c,s0d, s5a,s5b,s5c,s5d, s10a,s10b,s10c,s10d, s15a,s15b,s15c,s15d)
+        s0a=qrw[0]; s0b=qrw[1]; s0c=qrw[2]; s0d=qrw[3]; s5a=qrw[4]; s5b=qrw[5]; s5c=qrw[6]; s5d=qrw[7]; s10a=qrw[8]; s10b=qrw[9]; s10c=qrw[10]; s10d=qrw[11]; s15a=qrw[12]; s15b=qrw[13]; s15c=qrw[14]; s15d=qrw[15]
+        qrw = this.QR(s1a,s1b,s1c,s1d, s6a,s6b,s6c,s6d, s11a,s11b,s11c,s11d, s12a,s12b,s12c,s12d)
+        s1a=qrw[0]; s1b=qrw[1]; s1c=qrw[2]; s1d=qrw[3]; s6a=qrw[4]; s6b=qrw[5]; s6c=qrw[6]; s6d=qrw[7]; s11a=qrw[8]; s11b=qrw[9]; s11c=qrw[10]; s11d=qrw[11]; s12a=qrw[12]; s12b=qrw[13]; s12c=qrw[14]; s12d=qrw[15]
+        qrw = this.QR(s2a,s2b,s2c,s2d, s7a,s7b,s7c,s7d, s8a,s8b,s8c,s8d, s13a,s13b,s13c,s13d)
+        s2a=qrw[0]; s2b=qrw[1]; s2c=qrw[2]; s2d=qrw[3]; s7a=qrw[4]; s7b=qrw[5]; s7c=qrw[6]; s7d=qrw[7]; s8a=qrw[8]; s8b=qrw[9]; s8c=qrw[10]; s8d=qrw[11]; s13a=qrw[12]; s13b=qrw[13]; s13c=qrw[14]; s13d=qrw[15]
+        qrw = this.QR(s3a,s3b,s3c,s3d, s4a,s4b,s4c,s4d, s9a,s9b,s9c,s9d, s14a,s14b,s14c,s14d)
+        s3a=qrw[0]; s3b=qrw[1]; s3c=qrw[2]; s3d=qrw[3]; s4a=qrw[4]; s4b=qrw[5]; s4c=qrw[6]; s4d=qrw[7]; s9a=qrw[8]; s9b=qrw[9]; s9c=qrw[10]; s9d=qrw[11]; s14a=qrw[12]; s14b=qrw[13]; s14c=qrw[14]; s14d=qrw[15]
+
+        // Double-round 3
+        qrw = this.QR(s0a,s0b,s0c,s0d, s4a,s4b,s4c,s4d, s8a,s8b,s8c,s8d, s12a,s12b,s12c,s12d)
+        s0a=qrw[0]; s0b=qrw[1]; s0c=qrw[2]; s0d=qrw[3]; s4a=qrw[4]; s4b=qrw[5]; s4c=qrw[6]; s4d=qrw[7]; s8a=qrw[8]; s8b=qrw[9]; s8c=qrw[10]; s8d=qrw[11]; s12a=qrw[12]; s12b=qrw[13]; s12c=qrw[14]; s12d=qrw[15]
+        qrw = this.QR(s1a,s1b,s1c,s1d, s5a,s5b,s5c,s5d, s9a,s9b,s9c,s9d, s13a,s13b,s13c,s13d)
+        s1a=qrw[0]; s1b=qrw[1]; s1c=qrw[2]; s1d=qrw[3]; s5a=qrw[4]; s5b=qrw[5]; s5c=qrw[6]; s5d=qrw[7]; s9a=qrw[8]; s9b=qrw[9]; s9c=qrw[10]; s9d=qrw[11]; s13a=qrw[12]; s13b=qrw[13]; s13c=qrw[14]; s13d=qrw[15]
+        qrw = this.QR(s2a,s2b,s2c,s2d, s6a,s6b,s6c,s6d, s10a,s10b,s10c,s10d, s14a,s14b,s14c,s14d)
+        s2a=qrw[0]; s2b=qrw[1]; s2c=qrw[2]; s2d=qrw[3]; s6a=qrw[4]; s6b=qrw[5]; s6c=qrw[6]; s6d=qrw[7]; s10a=qrw[8]; s10b=qrw[9]; s10c=qrw[10]; s10d=qrw[11]; s14a=qrw[12]; s14b=qrw[13]; s14c=qrw[14]; s14d=qrw[15]
+        qrw = this.QR(s3a,s3b,s3c,s3d, s7a,s7b,s7c,s7d, s11a,s11b,s11c,s11d, s15a,s15b,s15c,s15d)
+        s3a=qrw[0]; s3b=qrw[1]; s3c=qrw[2]; s3d=qrw[3]; s7a=qrw[4]; s7b=qrw[5]; s7c=qrw[6]; s7d=qrw[7]; s11a=qrw[8]; s11b=qrw[9]; s11c=qrw[10]; s11d=qrw[11]; s15a=qrw[12]; s15b=qrw[13]; s15c=qrw[14]; s15d=qrw[15]
+        qrw = this.QR(s0a,s0b,s0c,s0d, s5a,s5b,s5c,s5d, s10a,s10b,s10c,s10d, s15a,s15b,s15c,s15d)
+        s0a=qrw[0]; s0b=qrw[1]; s0c=qrw[2]; s0d=qrw[3]; s5a=qrw[4]; s5b=qrw[5]; s5c=qrw[6]; s5d=qrw[7]; s10a=qrw[8]; s10b=qrw[9]; s10c=qrw[10]; s10d=qrw[11]; s15a=qrw[12]; s15b=qrw[13]; s15c=qrw[14]; s15d=qrw[15]
+        qrw = this.QR(s1a,s1b,s1c,s1d, s6a,s6b,s6c,s6d, s11a,s11b,s11c,s11d, s12a,s12b,s12c,s12d)
+        s1a=qrw[0]; s1b=qrw[1]; s1c=qrw[2]; s1d=qrw[3]; s6a=qrw[4]; s6b=qrw[5]; s6c=qrw[6]; s6d=qrw[7]; s11a=qrw[8]; s11b=qrw[9]; s11c=qrw[10]; s11d=qrw[11]; s12a=qrw[12]; s12b=qrw[13]; s12c=qrw[14]; s12d=qrw[15]
+        qrw = this.QR(s2a,s2b,s2c,s2d, s7a,s7b,s7c,s7d, s8a,s8b,s8c,s8d, s13a,s13b,s13c,s13d)
+        s2a=qrw[0]; s2b=qrw[1]; s2c=qrw[2]; s2d=qrw[3]; s7a=qrw[4]; s7b=qrw[5]; s7c=qrw[6]; s7d=qrw[7]; s8a=qrw[8]; s8b=qrw[9]; s8c=qrw[10]; s8d=qrw[11]; s13a=qrw[12]; s13b=qrw[13]; s13c=qrw[14]; s13d=qrw[15]
+        qrw = this.QR(s3a,s3b,s3c,s3d, s4a,s4b,s4c,s4d, s9a,s9b,s9c,s9d, s14a,s14b,s14c,s14d)
+        s3a=qrw[0]; s3b=qrw[1]; s3c=qrw[2]; s3d=qrw[3]; s4a=qrw[4]; s4b=qrw[5]; s4c=qrw[6]; s4d=qrw[7]; s9a=qrw[8]; s9b=qrw[9]; s9c=qrw[10]; s9d=qrw[11]; s14a=qrw[12]; s14b=qrw[13]; s14c=qrw[14]; s14d=qrw[15]
+
+        // Double-round 4
+        qrw = this.QR(s0a,s0b,s0c,s0d, s4a,s4b,s4c,s4d, s8a,s8b,s8c,s8d, s12a,s12b,s12c,s12d)
+        s0a=qrw[0]; s0b=qrw[1]; s0c=qrw[2]; s0d=qrw[3]; s4a=qrw[4]; s4b=qrw[5]; s4c=qrw[6]; s4d=qrw[7]; s8a=qrw[8]; s8b=qrw[9]; s8c=qrw[10]; s8d=qrw[11]; s12a=qrw[12]; s12b=qrw[13]; s12c=qrw[14]; s12d=qrw[15]
+        qrw = this.QR(s1a,s1b,s1c,s1d, s5a,s5b,s5c,s5d, s9a,s9b,s9c,s9d, s13a,s13b,s13c,s13d)
+        s1a=qrw[0]; s1b=qrw[1]; s1c=qrw[2]; s1d=qrw[3]; s5a=qrw[4]; s5b=qrw[5]; s5c=qrw[6]; s5d=qrw[7]; s9a=qrw[8]; s9b=qrw[9]; s9c=qrw[10]; s9d=qrw[11]; s13a=qrw[12]; s13b=qrw[13]; s13c=qrw[14]; s13d=qrw[15]
+        qrw = this.QR(s2a,s2b,s2c,s2d, s6a,s6b,s6c,s6d, s10a,s10b,s10c,s10d, s14a,s14b,s14c,s14d)
+        s2a=qrw[0]; s2b=qrw[1]; s2c=qrw[2]; s2d=qrw[3]; s6a=qrw[4]; s6b=qrw[5]; s6c=qrw[6]; s6d=qrw[7]; s10a=qrw[8]; s10b=qrw[9]; s10c=qrw[10]; s10d=qrw[11]; s14a=qrw[12]; s14b=qrw[13]; s14c=qrw[14]; s14d=qrw[15]
+        qrw = this.QR(s3a,s3b,s3c,s3d, s7a,s7b,s7c,s7d, s11a,s11b,s11c,s11d, s15a,s15b,s15c,s15d)
+        s3a=qrw[0]; s3b=qrw[1]; s3c=qrw[2]; s3d=qrw[3]; s7a=qrw[4]; s7b=qrw[5]; s7c=qrw[6]; s7d=qrw[7]; s11a=qrw[8]; s11b=qrw[9]; s11c=qrw[10]; s11d=qrw[11]; s15a=qrw[12]; s15b=qrw[13]; s15c=qrw[14]; s15d=qrw[15]
+        qrw = this.QR(s0a,s0b,s0c,s0d, s5a,s5b,s5c,s5d, s10a,s10b,s10c,s10d, s15a,s15b,s15c,s15d)
+        s0a=qrw[0]; s0b=qrw[1]; s0c=qrw[2]; s0d=qrw[3]; s5a=qrw[4]; s5b=qrw[5]; s5c=qrw[6]; s5d=qrw[7]; s10a=qrw[8]; s10b=qrw[9]; s10c=qrw[10]; s10d=qrw[11]; s15a=qrw[12]; s15b=qrw[13]; s15c=qrw[14]; s15d=qrw[15]
+        qrw = this.QR(s1a,s1b,s1c,s1d, s6a,s6b,s6c,s6d, s11a,s11b,s11c,s11d, s12a,s12b,s12c,s12d)
+        s1a=qrw[0]; s1b=qrw[1]; s1c=qrw[2]; s1d=qrw[3]; s6a=qrw[4]; s6b=qrw[5]; s6c=qrw[6]; s6d=qrw[7]; s11a=qrw[8]; s11b=qrw[9]; s11c=qrw[10]; s11d=qrw[11]; s12a=qrw[12]; s12b=qrw[13]; s12c=qrw[14]; s12d=qrw[15]
+        qrw = this.QR(s2a,s2b,s2c,s2d, s7a,s7b,s7c,s7d, s8a,s8b,s8c,s8d, s13a,s13b,s13c,s13d)
+        s2a=qrw[0]; s2b=qrw[1]; s2c=qrw[2]; s2d=qrw[3]; s7a=qrw[4]; s7b=qrw[5]; s7c=qrw[6]; s7d=qrw[7]; s8a=qrw[8]; s8b=qrw[9]; s8c=qrw[10]; s8d=qrw[11]; s13a=qrw[12]; s13b=qrw[13]; s13c=qrw[14]; s13d=qrw[15]
+        qrw = this.QR(s3a,s3b,s3c,s3d, s4a,s4b,s4c,s4d, s9a,s9b,s9c,s9d, s14a,s14b,s14c,s14d)
+        s3a=qrw[0]; s3b=qrw[1]; s3c=qrw[2]; s3d=qrw[3]; s4a=qrw[4]; s4b=qrw[5]; s4c=qrw[6]; s4d=qrw[7]; s9a=qrw[8]; s9b=qrw[9]; s9c=qrw[10]; s9d=qrw[11]; s14a=qrw[12]; s14b=qrw[13]; s14c=qrw[14]; s14d=qrw[15]
+
+        // Double-round 5
+        qrw = this.QR(s0a,s0b,s0c,s0d, s4a,s4b,s4c,s4d, s8a,s8b,s8c,s8d, s12a,s12b,s12c,s12d)
+        s0a=qrw[0]; s0b=qrw[1]; s0c=qrw[2]; s0d=qrw[3]; s4a=qrw[4]; s4b=qrw[5]; s4c=qrw[6]; s4d=qrw[7]; s8a=qrw[8]; s8b=qrw[9]; s8c=qrw[10]; s8d=qrw[11]; s12a=qrw[12]; s12b=qrw[13]; s12c=qrw[14]; s12d=qrw[15]
+        qrw = this.QR(s1a,s1b,s1c,s1d, s5a,s5b,s5c,s5d, s9a,s9b,s9c,s9d, s13a,s13b,s13c,s13d)
+        s1a=qrw[0]; s1b=qrw[1]; s1c=qrw[2]; s1d=qrw[3]; s5a=qrw[4]; s5b=qrw[5]; s5c=qrw[6]; s5d=qrw[7]; s9a=qrw[8]; s9b=qrw[9]; s9c=qrw[10]; s9d=qrw[11]; s13a=qrw[12]; s13b=qrw[13]; s13c=qrw[14]; s13d=qrw[15]
+        qrw = this.QR(s2a,s2b,s2c,s2d, s6a,s6b,s6c,s6d, s10a,s10b,s10c,s10d, s14a,s14b,s14c,s14d)
+        s2a=qrw[0]; s2b=qrw[1]; s2c=qrw[2]; s2d=qrw[3]; s6a=qrw[4]; s6b=qrw[5]; s6c=qrw[6]; s6d=qrw[7]; s10a=qrw[8]; s10b=qrw[9]; s10c=qrw[10]; s10d=qrw[11]; s14a=qrw[12]; s14b=qrw[13]; s14c=qrw[14]; s14d=qrw[15]
+        qrw = this.QR(s3a,s3b,s3c,s3d, s7a,s7b,s7c,s7d, s11a,s11b,s11c,s11d, s15a,s15b,s15c,s15d)
+        s3a=qrw[0]; s3b=qrw[1]; s3c=qrw[2]; s3d=qrw[3]; s7a=qrw[4]; s7b=qrw[5]; s7c=qrw[6]; s7d=qrw[7]; s11a=qrw[8]; s11b=qrw[9]; s11c=qrw[10]; s11d=qrw[11]; s15a=qrw[12]; s15b=qrw[13]; s15c=qrw[14]; s15d=qrw[15]
+        qrw = this.QR(s0a,s0b,s0c,s0d, s5a,s5b,s5c,s5d, s10a,s10b,s10c,s10d, s15a,s15b,s15c,s15d)
+        s0a=qrw[0]; s0b=qrw[1]; s0c=qrw[2]; s0d=qrw[3]; s5a=qrw[4]; s5b=qrw[5]; s5c=qrw[6]; s5d=qrw[7]; s10a=qrw[8]; s10b=qrw[9]; s10c=qrw[10]; s10d=qrw[11]; s15a=qrw[12]; s15b=qrw[13]; s15c=qrw[14]; s15d=qrw[15]
+        qrw = this.QR(s1a,s1b,s1c,s1d, s6a,s6b,s6c,s6d, s11a,s11b,s11c,s11d, s12a,s12b,s12c,s12d)
+        s1a=qrw[0]; s1b=qrw[1]; s1c=qrw[2]; s1d=qrw[3]; s6a=qrw[4]; s6b=qrw[5]; s6c=qrw[6]; s6d=qrw[7]; s11a=qrw[8]; s11b=qrw[9]; s11c=qrw[10]; s11d=qrw[11]; s12a=qrw[12]; s12b=qrw[13]; s12c=qrw[14]; s12d=qrw[15]
+        qrw = this.QR(s2a,s2b,s2c,s2d, s7a,s7b,s7c,s7d, s8a,s8b,s8c,s8d, s13a,s13b,s13c,s13d)
+        s2a=qrw[0]; s2b=qrw[1]; s2c=qrw[2]; s2d=qrw[3]; s7a=qrw[4]; s7b=qrw[5]; s7c=qrw[6]; s7d=qrw[7]; s8a=qrw[8]; s8b=qrw[9]; s8c=qrw[10]; s8d=qrw[11]; s13a=qrw[12]; s13b=qrw[13]; s13c=qrw[14]; s13d=qrw[15]
+        qrw = this.QR(s3a,s3b,s3c,s3d, s4a,s4b,s4c,s4d, s9a,s9b,s9c,s9d, s14a,s14b,s14c,s14d)
+        s3a=qrw[0]; s3b=qrw[1]; s3c=qrw[2]; s3d=qrw[3]; s4a=qrw[4]; s4b=qrw[5]; s4c=qrw[6]; s4d=qrw[7]; s9a=qrw[8]; s9b=qrw[9]; s9c=qrw[10]; s9d=qrw[11]; s14a=qrw[12]; s14b=qrw[13]; s14c=qrw[14]; s14d=qrw[15]
+
+        // Double-round 6
+        qrw = this.QR(s0a,s0b,s0c,s0d, s4a,s4b,s4c,s4d, s8a,s8b,s8c,s8d, s12a,s12b,s12c,s12d)
+        s0a=qrw[0]; s0b=qrw[1]; s0c=qrw[2]; s0d=qrw[3]; s4a=qrw[4]; s4b=qrw[5]; s4c=qrw[6]; s4d=qrw[7]; s8a=qrw[8]; s8b=qrw[9]; s8c=qrw[10]; s8d=qrw[11]; s12a=qrw[12]; s12b=qrw[13]; s12c=qrw[14]; s12d=qrw[15]
+        qrw = this.QR(s1a,s1b,s1c,s1d, s5a,s5b,s5c,s5d, s9a,s9b,s9c,s9d, s13a,s13b,s13c,s13d)
+        s1a=qrw[0]; s1b=qrw[1]; s1c=qrw[2]; s1d=qrw[3]; s5a=qrw[4]; s5b=qrw[5]; s5c=qrw[6]; s5d=qrw[7]; s9a=qrw[8]; s9b=qrw[9]; s9c=qrw[10]; s9d=qrw[11]; s13a=qrw[12]; s13b=qrw[13]; s13c=qrw[14]; s13d=qrw[15]
+        qrw = this.QR(s2a,s2b,s2c,s2d, s6a,s6b,s6c,s6d, s10a,s10b,s10c,s10d, s14a,s14b,s14c,s14d)
+        s2a=qrw[0]; s2b=qrw[1]; s2c=qrw[2]; s2d=qrw[3]; s6a=qrw[4]; s6b=qrw[5]; s6c=qrw[6]; s6d=qrw[7]; s10a=qrw[8]; s10b=qrw[9]; s10c=qrw[10]; s10d=qrw[11]; s14a=qrw[12]; s14b=qrw[13]; s14c=qrw[14]; s14d=qrw[15]
+        qrw = this.QR(s3a,s3b,s3c,s3d, s7a,s7b,s7c,s7d, s11a,s11b,s11c,s11d, s15a,s15b,s15c,s15d)
+        s3a=qrw[0]; s3b=qrw[1]; s3c=qrw[2]; s3d=qrw[3]; s7a=qrw[4]; s7b=qrw[5]; s7c=qrw[6]; s7d=qrw[7]; s11a=qrw[8]; s11b=qrw[9]; s11c=qrw[10]; s11d=qrw[11]; s15a=qrw[12]; s15b=qrw[13]; s15c=qrw[14]; s15d=qrw[15]
+        qrw = this.QR(s0a,s0b,s0c,s0d, s5a,s5b,s5c,s5d, s10a,s10b,s10c,s10d, s15a,s15b,s15c,s15d)
+        s0a=qrw[0]; s0b=qrw[1]; s0c=qrw[2]; s0d=qrw[3]; s5a=qrw[4]; s5b=qrw[5]; s5c=qrw[6]; s5d=qrw[7]; s10a=qrw[8]; s10b=qrw[9]; s10c=qrw[10]; s10d=qrw[11]; s15a=qrw[12]; s15b=qrw[13]; s15c=qrw[14]; s15d=qrw[15]
+        qrw = this.QR(s1a,s1b,s1c,s1d, s6a,s6b,s6c,s6d, s11a,s11b,s11c,s11d, s12a,s12b,s12c,s12d)
+        s1a=qrw[0]; s1b=qrw[1]; s1c=qrw[2]; s1d=qrw[3]; s6a=qrw[4]; s6b=qrw[5]; s6c=qrw[6]; s6d=qrw[7]; s11a=qrw[8]; s11b=qrw[9]; s11c=qrw[10]; s11d=qrw[11]; s12a=qrw[12]; s12b=qrw[13]; s12c=qrw[14]; s12d=qrw[15]
+        qrw = this.QR(s2a,s2b,s2c,s2d, s7a,s7b,s7c,s7d, s8a,s8b,s8c,s8d, s13a,s13b,s13c,s13d)
+        s2a=qrw[0]; s2b=qrw[1]; s2c=qrw[2]; s2d=qrw[3]; s7a=qrw[4]; s7b=qrw[5]; s7c=qrw[6]; s7d=qrw[7]; s8a=qrw[8]; s8b=qrw[9]; s8c=qrw[10]; s8d=qrw[11]; s13a=qrw[12]; s13b=qrw[13]; s13c=qrw[14]; s13d=qrw[15]
+        qrw = this.QR(s3a,s3b,s3c,s3d, s4a,s4b,s4c,s4d, s9a,s9b,s9c,s9d, s14a,s14b,s14c,s14d)
+        s3a=qrw[0]; s3b=qrw[1]; s3c=qrw[2]; s3d=qrw[3]; s4a=qrw[4]; s4b=qrw[5]; s4c=qrw[6]; s4d=qrw[7]; s9a=qrw[8]; s9b=qrw[9]; s9c=qrw[10]; s9d=qrw[11]; s14a=qrw[12]; s14b=qrw[13]; s14c=qrw[14]; s14d=qrw[15]
+
+        // Double-round 7
+        qrw = this.QR(s0a,s0b,s0c,s0d, s4a,s4b,s4c,s4d, s8a,s8b,s8c,s8d, s12a,s12b,s12c,s12d)
+        s0a=qrw[0]; s0b=qrw[1]; s0c=qrw[2]; s0d=qrw[3]; s4a=qrw[4]; s4b=qrw[5]; s4c=qrw[6]; s4d=qrw[7]; s8a=qrw[8]; s8b=qrw[9]; s8c=qrw[10]; s8d=qrw[11]; s12a=qrw[12]; s12b=qrw[13]; s12c=qrw[14]; s12d=qrw[15]
+        qrw = this.QR(s1a,s1b,s1c,s1d, s5a,s5b,s5c,s5d, s9a,s9b,s9c,s9d, s13a,s13b,s13c,s13d)
+        s1a=qrw[0]; s1b=qrw[1]; s1c=qrw[2]; s1d=qrw[3]; s5a=qrw[4]; s5b=qrw[5]; s5c=qrw[6]; s5d=qrw[7]; s9a=qrw[8]; s9b=qrw[9]; s9c=qrw[10]; s9d=qrw[11]; s13a=qrw[12]; s13b=qrw[13]; s13c=qrw[14]; s13d=qrw[15]
+        qrw = this.QR(s2a,s2b,s2c,s2d, s6a,s6b,s6c,s6d, s10a,s10b,s10c,s10d, s14a,s14b,s14c,s14d)
+        s2a=qrw[0]; s2b=qrw[1]; s2c=qrw[2]; s2d=qrw[3]; s6a=qrw[4]; s6b=qrw[5]; s6c=qrw[6]; s6d=qrw[7]; s10a=qrw[8]; s10b=qrw[9]; s10c=qrw[10]; s10d=qrw[11]; s14a=qrw[12]; s14b=qrw[13]; s14c=qrw[14]; s14d=qrw[15]
+        qrw = this.QR(s3a,s3b,s3c,s3d, s7a,s7b,s7c,s7d, s11a,s11b,s11c,s11d, s15a,s15b,s15c,s15d)
+        s3a=qrw[0]; s3b=qrw[1]; s3c=qrw[2]; s3d=qrw[3]; s7a=qrw[4]; s7b=qrw[5]; s7c=qrw[6]; s7d=qrw[7]; s11a=qrw[8]; s11b=qrw[9]; s11c=qrw[10]; s11d=qrw[11]; s15a=qrw[12]; s15b=qrw[13]; s15c=qrw[14]; s15d=qrw[15]
+        qrw = this.QR(s0a,s0b,s0c,s0d, s5a,s5b,s5c,s5d, s10a,s10b,s10c,s10d, s15a,s15b,s15c,s15d)
+        s0a=qrw[0]; s0b=qrw[1]; s0c=qrw[2]; s0d=qrw[3]; s5a=qrw[4]; s5b=qrw[5]; s5c=qrw[6]; s5d=qrw[7]; s10a=qrw[8]; s10b=qrw[9]; s10c=qrw[10]; s10d=qrw[11]; s15a=qrw[12]; s15b=qrw[13]; s15c=qrw[14]; s15d=qrw[15]
+        qrw = this.QR(s1a,s1b,s1c,s1d, s6a,s6b,s6c,s6d, s11a,s11b,s11c,s11d, s12a,s12b,s12c,s12d)
+        s1a=qrw[0]; s1b=qrw[1]; s1c=qrw[2]; s1d=qrw[3]; s6a=qrw[4]; s6b=qrw[5]; s6c=qrw[6]; s6d=qrw[7]; s11a=qrw[8]; s11b=qrw[9]; s11c=qrw[10]; s11d=qrw[11]; s12a=qrw[12]; s12b=qrw[13]; s12c=qrw[14]; s12d=qrw[15]
+        qrw = this.QR(s2a,s2b,s2c,s2d, s7a,s7b,s7c,s7d, s8a,s8b,s8c,s8d, s13a,s13b,s13c,s13d)
+        s2a=qrw[0]; s2b=qrw[1]; s2c=qrw[2]; s2d=qrw[3]; s7a=qrw[4]; s7b=qrw[5]; s7c=qrw[6]; s7d=qrw[7]; s8a=qrw[8]; s8b=qrw[9]; s8c=qrw[10]; s8d=qrw[11]; s13a=qrw[12]; s13b=qrw[13]; s13c=qrw[14]; s13d=qrw[15]
+        qrw = this.QR(s3a,s3b,s3c,s3d, s4a,s4b,s4c,s4d, s9a,s9b,s9c,s9d, s14a,s14b,s14c,s14d)
+        s3a=qrw[0]; s3b=qrw[1]; s3c=qrw[2]; s3d=qrw[3]; s4a=qrw[4]; s4b=qrw[5]; s4c=qrw[6]; s4d=qrw[7]; s9a=qrw[8]; s9b=qrw[9]; s9c=qrw[10]; s9d=qrw[11]; s14a=qrw[12]; s14b=qrw[13]; s14c=qrw[14]; s14d=qrw[15]
+
+        // Double-round 8
+        qrw = this.QR(s0a,s0b,s0c,s0d, s4a,s4b,s4c,s4d, s8a,s8b,s8c,s8d, s12a,s12b,s12c,s12d)
+        s0a=qrw[0]; s0b=qrw[1]; s0c=qrw[2]; s0d=qrw[3]; s4a=qrw[4]; s4b=qrw[5]; s4c=qrw[6]; s4d=qrw[7]; s8a=qrw[8]; s8b=qrw[9]; s8c=qrw[10]; s8d=qrw[11]; s12a=qrw[12]; s12b=qrw[13]; s12c=qrw[14]; s12d=qrw[15]
+        qrw = this.QR(s1a,s1b,s1c,s1d, s5a,s5b,s5c,s5d, s9a,s9b,s9c,s9d, s13a,s13b,s13c,s13d)
+        s1a=qrw[0]; s1b=qrw[1]; s1c=qrw[2]; s1d=qrw[3]; s5a=qrw[4]; s5b=qrw[5]; s5c=qrw[6]; s5d=qrw[7]; s9a=qrw[8]; s9b=qrw[9]; s9c=qrw[10]; s9d=qrw[11]; s13a=qrw[12]; s13b=qrw[13]; s13c=qrw[14]; s13d=qrw[15]
+        qrw = this.QR(s2a,s2b,s2c,s2d, s6a,s6b,s6c,s6d, s10a,s10b,s10c,s10d, s14a,s14b,s14c,s14d)
+        s2a=qrw[0]; s2b=qrw[1]; s2c=qrw[2]; s2d=qrw[3]; s6a=qrw[4]; s6b=qrw[5]; s6c=qrw[6]; s6d=qrw[7]; s10a=qrw[8]; s10b=qrw[9]; s10c=qrw[10]; s10d=qrw[11]; s14a=qrw[12]; s14b=qrw[13]; s14c=qrw[14]; s14d=qrw[15]
+        qrw = this.QR(s3a,s3b,s3c,s3d, s7a,s7b,s7c,s7d, s11a,s11b,s11c,s11d, s15a,s15b,s15c,s15d)
+        s3a=qrw[0]; s3b=qrw[1]; s3c=qrw[2]; s3d=qrw[3]; s7a=qrw[4]; s7b=qrw[5]; s7c=qrw[6]; s7d=qrw[7]; s11a=qrw[8]; s11b=qrw[9]; s11c=qrw[10]; s11d=qrw[11]; s15a=qrw[12]; s15b=qrw[13]; s15c=qrw[14]; s15d=qrw[15]
+        qrw = this.QR(s0a,s0b,s0c,s0d, s5a,s5b,s5c,s5d, s10a,s10b,s10c,s10d, s15a,s15b,s15c,s15d)
+        s0a=qrw[0]; s0b=qrw[1]; s0c=qrw[2]; s0d=qrw[3]; s5a=qrw[4]; s5b=qrw[5]; s5c=qrw[6]; s5d=qrw[7]; s10a=qrw[8]; s10b=qrw[9]; s10c=qrw[10]; s10d=qrw[11]; s15a=qrw[12]; s15b=qrw[13]; s15c=qrw[14]; s15d=qrw[15]
+        qrw = this.QR(s1a,s1b,s1c,s1d, s6a,s6b,s6c,s6d, s11a,s11b,s11c,s11d, s12a,s12b,s12c,s12d)
+        s1a=qrw[0]; s1b=qrw[1]; s1c=qrw[2]; s1d=qrw[3]; s6a=qrw[4]; s6b=qrw[5]; s6c=qrw[6]; s6d=qrw[7]; s11a=qrw[8]; s11b=qrw[9]; s11c=qrw[10]; s11d=qrw[11]; s12a=qrw[12]; s12b=qrw[13]; s12c=qrw[14]; s12d=qrw[15]
+        qrw = this.QR(s2a,s2b,s2c,s2d, s7a,s7b,s7c,s7d, s8a,s8b,s8c,s8d, s13a,s13b,s13c,s13d)
+        s2a=qrw[0]; s2b=qrw[1]; s2c=qrw[2]; s2d=qrw[3]; s7a=qrw[4]; s7b=qrw[5]; s7c=qrw[6]; s7d=qrw[7]; s8a=qrw[8]; s8b=qrw[9]; s8c=qrw[10]; s8d=qrw[11]; s13a=qrw[12]; s13b=qrw[13]; s13c=qrw[14]; s13d=qrw[15]
+        qrw = this.QR(s3a,s3b,s3c,s3d, s4a,s4b,s4c,s4d, s9a,s9b,s9c,s9d, s14a,s14b,s14c,s14d)
+        s3a=qrw[0]; s3b=qrw[1]; s3c=qrw[2]; s3d=qrw[3]; s4a=qrw[4]; s4b=qrw[5]; s4c=qrw[6]; s4d=qrw[7]; s9a=qrw[8]; s9b=qrw[9]; s9c=qrw[10]; s9d=qrw[11]; s14a=qrw[12]; s14b=qrw[13]; s14c=qrw[14]; s14d=qrw[15]
+
+        // Double-round 9
+        qrw = this.QR(s0a,s0b,s0c,s0d, s4a,s4b,s4c,s4d, s8a,s8b,s8c,s8d, s12a,s12b,s12c,s12d)
+        s0a=qrw[0]; s0b=qrw[1]; s0c=qrw[2]; s0d=qrw[3]; s4a=qrw[4]; s4b=qrw[5]; s4c=qrw[6]; s4d=qrw[7]; s8a=qrw[8]; s8b=qrw[9]; s8c=qrw[10]; s8d=qrw[11]; s12a=qrw[12]; s12b=qrw[13]; s12c=qrw[14]; s12d=qrw[15]
+        qrw = this.QR(s1a,s1b,s1c,s1d, s5a,s5b,s5c,s5d, s9a,s9b,s9c,s9d, s13a,s13b,s13c,s13d)
+        s1a=qrw[0]; s1b=qrw[1]; s1c=qrw[2]; s1d=qrw[3]; s5a=qrw[4]; s5b=qrw[5]; s5c=qrw[6]; s5d=qrw[7]; s9a=qrw[8]; s9b=qrw[9]; s9c=qrw[10]; s9d=qrw[11]; s13a=qrw[12]; s13b=qrw[13]; s13c=qrw[14]; s13d=qrw[15]
+        qrw = this.QR(s2a,s2b,s2c,s2d, s6a,s6b,s6c,s6d, s10a,s10b,s10c,s10d, s14a,s14b,s14c,s14d)
+        s2a=qrw[0]; s2b=qrw[1]; s2c=qrw[2]; s2d=qrw[3]; s6a=qrw[4]; s6b=qrw[5]; s6c=qrw[6]; s6d=qrw[7]; s10a=qrw[8]; s10b=qrw[9]; s10c=qrw[10]; s10d=qrw[11]; s14a=qrw[12]; s14b=qrw[13]; s14c=qrw[14]; s14d=qrw[15]
+        qrw = this.QR(s3a,s3b,s3c,s3d, s7a,s7b,s7c,s7d, s11a,s11b,s11c,s11d, s15a,s15b,s15c,s15d)
+        s3a=qrw[0]; s3b=qrw[1]; s3c=qrw[2]; s3d=qrw[3]; s7a=qrw[4]; s7b=qrw[5]; s7c=qrw[6]; s7d=qrw[7]; s11a=qrw[8]; s11b=qrw[9]; s11c=qrw[10]; s11d=qrw[11]; s15a=qrw[12]; s15b=qrw[13]; s15c=qrw[14]; s15d=qrw[15]
+        qrw = this.QR(s0a,s0b,s0c,s0d, s5a,s5b,s5c,s5d, s10a,s10b,s10c,s10d, s15a,s15b,s15c,s15d)
+        s0a=qrw[0]; s0b=qrw[1]; s0c=qrw[2]; s0d=qrw[3]; s5a=qrw[4]; s5b=qrw[5]; s5c=qrw[6]; s5d=qrw[7]; s10a=qrw[8]; s10b=qrw[9]; s10c=qrw[10]; s10d=qrw[11]; s15a=qrw[12]; s15b=qrw[13]; s15c=qrw[14]; s15d=qrw[15]
+        qrw = this.QR(s1a,s1b,s1c,s1d, s6a,s6b,s6c,s6d, s11a,s11b,s11c,s11d, s12a,s12b,s12c,s12d)
+        s1a=qrw[0]; s1b=qrw[1]; s1c=qrw[2]; s1d=qrw[3]; s6a=qrw[4]; s6b=qrw[5]; s6c=qrw[6]; s6d=qrw[7]; s11a=qrw[8]; s11b=qrw[9]; s11c=qrw[10]; s11d=qrw[11]; s12a=qrw[12]; s12b=qrw[13]; s12c=qrw[14]; s12d=qrw[15]
+        qrw = this.QR(s2a,s2b,s2c,s2d, s7a,s7b,s7c,s7d, s8a,s8b,s8c,s8d, s13a,s13b,s13c,s13d)
+        s2a=qrw[0]; s2b=qrw[1]; s2c=qrw[2]; s2d=qrw[3]; s7a=qrw[4]; s7b=qrw[5]; s7c=qrw[6]; s7d=qrw[7]; s8a=qrw[8]; s8b=qrw[9]; s8c=qrw[10]; s8d=qrw[11]; s13a=qrw[12]; s13b=qrw[13]; s13c=qrw[14]; s13d=qrw[15]
+        qrw = this.QR(s3a,s3b,s3c,s3d, s4a,s4b,s4c,s4d, s9a,s9b,s9c,s9d, s14a,s14b,s14c,s14d)
+        s3a=qrw[0]; s3b=qrw[1]; s3c=qrw[2]; s3d=qrw[3]; s4a=qrw[4]; s4b=qrw[5]; s4c=qrw[6]; s4d=qrw[7]; s9a=qrw[8]; s9b=qrw[9]; s9c=qrw[10]; s9d=qrw[11]; s14a=qrw[12]; s14b=qrw[13]; s14c=qrw[14]; s14d=qrw[15]
+
+        // Double-round 10
+        qrw = this.QR(s0a,s0b,s0c,s0d, s4a,s4b,s4c,s4d, s8a,s8b,s8c,s8d, s12a,s12b,s12c,s12d)
+        s0a=qrw[0]; s0b=qrw[1]; s0c=qrw[2]; s0d=qrw[3]; s4a=qrw[4]; s4b=qrw[5]; s4c=qrw[6]; s4d=qrw[7]; s8a=qrw[8]; s8b=qrw[9]; s8c=qrw[10]; s8d=qrw[11]; s12a=qrw[12]; s12b=qrw[13]; s12c=qrw[14]; s12d=qrw[15]
+        qrw = this.QR(s1a,s1b,s1c,s1d, s5a,s5b,s5c,s5d, s9a,s9b,s9c,s9d, s13a,s13b,s13c,s13d)
+        s1a=qrw[0]; s1b=qrw[1]; s1c=qrw[2]; s1d=qrw[3]; s5a=qrw[4]; s5b=qrw[5]; s5c=qrw[6]; s5d=qrw[7]; s9a=qrw[8]; s9b=qrw[9]; s9c=qrw[10]; s9d=qrw[11]; s13a=qrw[12]; s13b=qrw[13]; s13c=qrw[14]; s13d=qrw[15]
+        qrw = this.QR(s2a,s2b,s2c,s2d, s6a,s6b,s6c,s6d, s10a,s10b,s10c,s10d, s14a,s14b,s14c,s14d)
+        s2a=qrw[0]; s2b=qrw[1]; s2c=qrw[2]; s2d=qrw[3]; s6a=qrw[4]; s6b=qrw[5]; s6c=qrw[6]; s6d=qrw[7]; s10a=qrw[8]; s10b=qrw[9]; s10c=qrw[10]; s10d=qrw[11]; s14a=qrw[12]; s14b=qrw[13]; s14c=qrw[14]; s14d=qrw[15]
+        qrw = this.QR(s3a,s3b,s3c,s3d, s7a,s7b,s7c,s7d, s11a,s11b,s11c,s11d, s15a,s15b,s15c,s15d)
+        s3a=qrw[0]; s3b=qrw[1]; s3c=qrw[2]; s3d=qrw[3]; s7a=qrw[4]; s7b=qrw[5]; s7c=qrw[6]; s7d=qrw[7]; s11a=qrw[8]; s11b=qrw[9]; s11c=qrw[10]; s11d=qrw[11]; s15a=qrw[12]; s15b=qrw[13]; s15c=qrw[14]; s15d=qrw[15]
+        qrw = this.QR(s0a,s0b,s0c,s0d, s5a,s5b,s5c,s5d, s10a,s10b,s10c,s10d, s15a,s15b,s15c,s15d)
+        s0a=qrw[0]; s0b=qrw[1]; s0c=qrw[2]; s0d=qrw[3]; s5a=qrw[4]; s5b=qrw[5]; s5c=qrw[6]; s5d=qrw[7]; s10a=qrw[8]; s10b=qrw[9]; s10c=qrw[10]; s10d=qrw[11]; s15a=qrw[12]; s15b=qrw[13]; s15c=qrw[14]; s15d=qrw[15]
+        qrw = this.QR(s1a,s1b,s1c,s1d, s6a,s6b,s6c,s6d, s11a,s11b,s11c,s11d, s12a,s12b,s12c,s12d)
+        s1a=qrw[0]; s1b=qrw[1]; s1c=qrw[2]; s1d=qrw[3]; s6a=qrw[4]; s6b=qrw[5]; s6c=qrw[6]; s6d=qrw[7]; s11a=qrw[8]; s11b=qrw[9]; s11c=qrw[10]; s11d=qrw[11]; s12a=qrw[12]; s12b=qrw[13]; s12c=qrw[14]; s12d=qrw[15]
+        qrw = this.QR(s2a,s2b,s2c,s2d, s7a,s7b,s7c,s7d, s8a,s8b,s8c,s8d, s13a,s13b,s13c,s13d)
+        s2a=qrw[0]; s2b=qrw[1]; s2c=qrw[2]; s2d=qrw[3]; s7a=qrw[4]; s7b=qrw[5]; s7c=qrw[6]; s7d=qrw[7]; s8a=qrw[8]; s8b=qrw[9]; s8c=qrw[10]; s8d=qrw[11]; s13a=qrw[12]; s13b=qrw[13]; s13c=qrw[14]; s13d=qrw[15]
+        qrw = this.QR(s3a,s3b,s3c,s3d, s4a,s4b,s4c,s4d, s9a,s9b,s9c,s9d, s14a,s14b,s14c,s14d)
+        s3a=qrw[0]; s3b=qrw[1]; s3c=qrw[2]; s3d=qrw[3]; s4a=qrw[4]; s4b=qrw[5]; s4c=qrw[6]; s4d=qrw[7]; s9a=qrw[8]; s9b=qrw[9]; s9c=qrw[10]; s9d=qrw[11]; s14a=qrw[12]; s14b=qrw[13]; s14c=qrw[14]; s14d=qrw[15]
+
+        // ---------------------------------------------------------------
+        // Final add: out[i] = (working[i] + initial[i]) mod 2^32.
+        // ---------------------------------------------------------------
+        var f0:  int[4] = this.AddWord32(s0a,s0b,s0c,s0d,   i0a,i0b,i0c,i0d)
+        var f1:  int[4] = this.AddWord32(s1a,s1b,s1c,s1d,   i1a,i1b,i1c,i1d)
+        var f2:  int[4] = this.AddWord32(s2a,s2b,s2c,s2d,   i2a,i2b,i2c,i2d)
+        var f3:  int[4] = this.AddWord32(s3a,s3b,s3c,s3d,   i3a,i3b,i3c,i3d)
+        var f4:  int[4] = this.AddWord32(s4a,s4b,s4c,s4d,   i4a,i4b,i4c,i4d)
+        var f5:  int[4] = this.AddWord32(s5a,s5b,s5c,s5d,   i5a,i5b,i5c,i5d)
+        var f6:  int[4] = this.AddWord32(s6a,s6b,s6c,s6d,   i6a,i6b,i6c,i6d)
+        var f7:  int[4] = this.AddWord32(s7a,s7b,s7c,s7d,   i7a,i7b,i7c,i7d)
+        var f8:  int[4] = this.AddWord32(s8a,s8b,s8c,s8d,   i8a,i8b,i8c,i8d)
+        var f9:  int[4] = this.AddWord32(s9a,s9b,s9c,s9d,   i9a,i9b,i9c,i9d)
+        var f10: int[4] = this.AddWord32(s10a,s10b,s10c,s10d, i10a,i10b,i10c,i10d)
+        var f11: int[4] = this.AddWord32(s11a,s11b,s11c,s11d, i11a,i11b,i11c,i11d)
+        var f12: int[4] = this.AddWord32(s12a,s12b,s12c,s12d, i12a,i12b,i12c,i12d)
+        var f13: int[4] = this.AddWord32(s13a,s13b,s13c,s13d, i13a,i13b,i13c,i13d)
+        var f14: int[4] = this.AddWord32(s14a,s14b,s14c,s14d, i14a,i14b,i14c,i14d)
+        var f15: int[4] = this.AddWord32(s15a,s15b,s15c,s15d, i15a,i15b,i15c,i15d)
+
+        // ---------------------------------------------------------------
+        // Serialise keystream as 64 little-endian bytes, XOR with input.
+        // ---------------------------------------------------------------
+        var p0:  byte = this.blk[0];  var p1:  byte = this.blk[1];  var p2:  byte = this.blk[2];  var p3:  byte = this.blk[3]
+        var p4:  byte = this.blk[4];  var p5:  byte = this.blk[5];  var p6:  byte = this.blk[6];  var p7:  byte = this.blk[7]
+        var p8:  byte = this.blk[8];  var p9:  byte = this.blk[9];  var p10: byte = this.blk[10]; var p11: byte = this.blk[11]
+        var p12: byte = this.blk[12]; var p13: byte = this.blk[13]; var p14: byte = this.blk[14]; var p15: byte = this.blk[15]
+        var p16: byte = this.blk[16]; var p17: byte = this.blk[17]; var p18: byte = this.blk[18]; var p19: byte = this.blk[19]
+        var p20: byte = this.blk[20]; var p21: byte = this.blk[21]; var p22: byte = this.blk[22]; var p23: byte = this.blk[23]
+        var p24: byte = this.blk[24]; var p25: byte = this.blk[25]; var p26: byte = this.blk[26]; var p27: byte = this.blk[27]
+        var p28: byte = this.blk[28]; var p29: byte = this.blk[29]; var p30: byte = this.blk[30]; var p31: byte = this.blk[31]
+        var p32: byte = this.blk[32]; var p33: byte = this.blk[33]; var p34: byte = this.blk[34]; var p35: byte = this.blk[35]
+        var p36: byte = this.blk[36]; var p37: byte = this.blk[37]; var p38: byte = this.blk[38]; var p39: byte = this.blk[39]
+        var p40: byte = this.blk[40]; var p41: byte = this.blk[41]; var p42: byte = this.blk[42]; var p43: byte = this.blk[43]
+        var p44: byte = this.blk[44]; var p45: byte = this.blk[45]; var p46: byte = this.blk[46]; var p47: byte = this.blk[47]
+        var p48: byte = this.blk[48]; var p49: byte = this.blk[49]; var p50: byte = this.blk[50]; var p51: byte = this.blk[51]
+        var p52: byte = this.blk[52]; var p53: byte = this.blk[53]; var p54: byte = this.blk[54]; var p55: byte = this.blk[55]
+        var p56: byte = this.blk[56]; var p57: byte = this.blk[57]; var p58: byte = this.blk[58]; var p59: byte = this.blk[59]
+        var p60: byte = this.blk[60]; var p61: byte = this.blk[61]; var p62: byte = this.blk[62]; var p63: byte = this.blk[63]
+
+        // Convert keystream int[4] to bytes, then XOR with plaintext.
+        var ks0b: byte = f0[0] as byte; var ks1b: byte = f0[1] as byte; var ks2b: byte = f0[2] as byte; var ks3b: byte = f0[3] as byte
+        var ks4b: byte = f1[0] as byte; var ks5b: byte = f1[1] as byte; var ks6b: byte = f1[2] as byte; var ks7b: byte = f1[3] as byte
+        var ks8b: byte = f2[0] as byte; var ks9b: byte = f2[1] as byte; var ks10b: byte = f2[2] as byte; var ks11b: byte = f2[3] as byte
+        var ks12b: byte = f3[0] as byte; var ks13b: byte = f3[1] as byte; var ks14b: byte = f3[2] as byte; var ks15b: byte = f3[3] as byte
+        var ks16b: byte = f4[0] as byte; var ks17b: byte = f4[1] as byte; var ks18b: byte = f4[2] as byte; var ks19b: byte = f4[3] as byte
+        var ks20b: byte = f5[0] as byte; var ks21b: byte = f5[1] as byte; var ks22b: byte = f5[2] as byte; var ks23b: byte = f5[3] as byte
+        var ks24b: byte = f6[0] as byte; var ks25b: byte = f6[1] as byte; var ks26b: byte = f6[2] as byte; var ks27b: byte = f6[3] as byte
+        var ks28b: byte = f7[0] as byte; var ks29b: byte = f7[1] as byte; var ks30b: byte = f7[2] as byte; var ks31b: byte = f7[3] as byte
+        var ks32b: byte = f8[0] as byte; var ks33b: byte = f8[1] as byte; var ks34b: byte = f8[2] as byte; var ks35b: byte = f8[3] as byte
+        var ks36b: byte = f9[0] as byte; var ks37b: byte = f9[1] as byte; var ks38b: byte = f9[2] as byte; var ks39b: byte = f9[3] as byte
+        var ks40b: byte = f10[0] as byte; var ks41b: byte = f10[1] as byte; var ks42b: byte = f10[2] as byte; var ks43b: byte = f10[3] as byte
+        var ks44b: byte = f11[0] as byte; var ks45b: byte = f11[1] as byte; var ks46b: byte = f11[2] as byte; var ks47b: byte = f11[3] as byte
+        var ks48b: byte = f12[0] as byte; var ks49b: byte = f12[1] as byte; var ks50b: byte = f12[2] as byte; var ks51b: byte = f12[3] as byte
+        var ks52b: byte = f13[0] as byte; var ks53b: byte = f13[1] as byte; var ks54b: byte = f13[2] as byte; var ks55b: byte = f13[3] as byte
+        var ks56b: byte = f14[0] as byte; var ks57b: byte = f14[1] as byte; var ks58b: byte = f14[2] as byte; var ks59b: byte = f14[3] as byte
+        var ks60b: byte = f15[0] as byte; var ks61b: byte = f15[1] as byte; var ks62b: byte = f15[2] as byte; var ks63b: byte = f15[3] as byte
+
+        this.outBlk[0]  = p0 ^ ks0b;  this.outBlk[1]  = p1 ^ ks1b
+        this.outBlk[2]  = p2 ^ ks2b;  this.outBlk[3]  = p3 ^ ks3b
+        this.outBlk[4]  = p4 ^ ks4b;  this.outBlk[5]  = p5 ^ ks5b
+        this.outBlk[6]  = p6 ^ ks6b;  this.outBlk[7]  = p7 ^ ks7b
+        this.outBlk[8]  = p8 ^ ks8b;  this.outBlk[9]  = p9 ^ ks9b
+        this.outBlk[10] = p10 ^ ks10b; this.outBlk[11] = p11 ^ ks11b
+        this.outBlk[12] = p12 ^ ks12b; this.outBlk[13] = p13 ^ ks13b
+        this.outBlk[14] = p14 ^ ks14b; this.outBlk[15] = p15 ^ ks15b
+        this.outBlk[16] = p16 ^ ks16b; this.outBlk[17] = p17 ^ ks17b
+        this.outBlk[18] = p18 ^ ks18b; this.outBlk[19] = p19 ^ ks19b
+        this.outBlk[20] = p20 ^ ks20b; this.outBlk[21] = p21 ^ ks21b
+        this.outBlk[22] = p22 ^ ks22b; this.outBlk[23] = p23 ^ ks23b
+        this.outBlk[24] = p24 ^ ks24b; this.outBlk[25] = p25 ^ ks25b
+        this.outBlk[26] = p26 ^ ks26b; this.outBlk[27] = p27 ^ ks27b
+        this.outBlk[28] = p28 ^ ks28b; this.outBlk[29] = p29 ^ ks29b
+        this.outBlk[30] = p30 ^ ks30b; this.outBlk[31] = p31 ^ ks31b
+        this.outBlk[32] = p32 ^ ks32b; this.outBlk[33] = p33 ^ ks33b
+        this.outBlk[34] = p34 ^ ks34b; this.outBlk[35] = p35 ^ ks35b
+        this.outBlk[36] = p36 ^ ks36b; this.outBlk[37] = p37 ^ ks37b
+        this.outBlk[38] = p38 ^ ks38b; this.outBlk[39] = p39 ^ ks39b
+        this.outBlk[40] = p40 ^ ks40b; this.outBlk[41] = p41 ^ ks41b
+        this.outBlk[42] = p42 ^ ks42b; this.outBlk[43] = p43 ^ ks43b
+        this.outBlk[44] = p44 ^ ks44b; this.outBlk[45] = p45 ^ ks45b
+        this.outBlk[46] = p46 ^ ks46b; this.outBlk[47] = p47 ^ ks47b
+        this.outBlk[48] = p48 ^ ks48b; this.outBlk[49] = p49 ^ ks49b
+        this.outBlk[50] = p50 ^ ks50b; this.outBlk[51] = p51 ^ ks51b
+        this.outBlk[52] = p52 ^ ks52b; this.outBlk[53] = p53 ^ ks53b
+        this.outBlk[54] = p54 ^ ks54b; this.outBlk[55] = p55 ^ ks55b
+        this.outBlk[56] = p56 ^ ks56b; this.outBlk[57] = p57 ^ ks57b
+        this.outBlk[58] = p58 ^ ks58b; this.outBlk[59] = p59 ^ ks59b
+        this.outBlk[60] = p60 ^ ks60b; this.outBlk[61] = p61 ^ ks61b
+        this.outBlk[62] = p62 ^ ks62b; this.outBlk[63] = p63 ^ ks63b
+
+        // Increment the 32-bit counter (little-endian).
+        this.IncrementCounter()
+    }
+
+    public fn GetBlock() byte[64]
+    {
+        return this.outBlk
+    }
+
+    public fn GetByte(idx: int) byte
+    {
+        return this.outBlk[idx]
+    }
+
+    public fn ClearKey()
+    {
+        for (var i = 0; i < 32; i++)
+        {
+            this.key[i] = 0x00
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Private helpers
+    // -----------------------------------------------------------------------
+
+    // QR: ChaCha20 quarter-round on four 32-bit little-endian words.
+    // Each word is passed as 4 ints (LS byte first: wa, wb, wc, wd).
+    // Returns 16 ints: new a (4), new b (4), new c (4), new d (4).
+    fn QR(aa: int, ab: int, ac: int, ad: int,
+          ba: int, bb: int, bc: int, bd: int,
+          ca: int, cb: int, cc: int, cd: int,
+          da: int, db: int, dc: int, dd: int) int[16]
+    {
+        // a += b
+        var add1: int[4] = this.AddWord32(aa, ab, ac, ad, ba, bb, bc, bd)
+        var na0: int = add1[0]; var na1: int = add1[1]; var na2: int = add1[2]; var na3: int = add1[3]
+        // d ^= a
+        var xd: int[4] = this.XorWord32(da, db, dc, dd, na0, na1, na2, na3)
+        var nd0: int = xd[0]; var nd1: int = xd[1]; var nd2: int = xd[2]; var nd3: int = xd[3]
+        // d = d <<< 16
+        var rd16: int[4] = this.Rotl16(nd0, nd1, nd2, nd3)
+        nd0 = rd16[0]; nd1 = rd16[1]; nd2 = rd16[2]; nd3 = rd16[3]
+
+        // c += d
+        var add2: int[4] = this.AddWord32(ca, cb, cc, cd, nd0, nd1, nd2, nd3)
+        var nc0: int = add2[0]; var nc1: int = add2[1]; var nc2: int = add2[2]; var nc3: int = add2[3]
+        // b ^= c
+        var xb: int[4] = this.XorWord32(ba, bb, bc, bd, nc0, nc1, nc2, nc3)
+        var nb0: int = xb[0]; var nb1: int = xb[1]; var nb2: int = xb[2]; var nb3: int = xb[3]
+        // b = b <<< 12
+        var rb12: int[4] = this.Rotl12(nb0, nb1, nb2, nb3)
+        nb0 = rb12[0]; nb1 = rb12[1]; nb2 = rb12[2]; nb3 = rb12[3]
+
+        // a += b
+        var add3: int[4] = this.AddWord32(na0, na1, na2, na3, nb0, nb1, nb2, nb3)
+        na0 = add3[0]; na1 = add3[1]; na2 = add3[2]; na3 = add3[3]
+        // d ^= a
+        var xd2: int[4] = this.XorWord32(nd0, nd1, nd2, nd3, na0, na1, na2, na3)
+        nd0 = xd2[0]; nd1 = xd2[1]; nd2 = xd2[2]; nd3 = xd2[3]
+        // d = d <<< 8
+        var rd8: int[4] = this.Rotl8(nd0, nd1, nd2, nd3)
+        nd0 = rd8[0]; nd1 = rd8[1]; nd2 = rd8[2]; nd3 = rd8[3]
+
+        // c += d
+        var add4: int[4] = this.AddWord32(nc0, nc1, nc2, nc3, nd0, nd1, nd2, nd3)
+        nc0 = add4[0]; nc1 = add4[1]; nc2 = add4[2]; nc3 = add4[3]
+        // b ^= c
+        var xb2: int[4] = this.XorWord32(nb0, nb1, nb2, nb3, nc0, nc1, nc2, nc3)
+        nb0 = xb2[0]; nb1 = xb2[1]; nb2 = xb2[2]; nb3 = xb2[3]
+        // b = b <<< 7
+        var rb7: int[4] = this.Rotl7(nb0, nb1, nb2, nb3)
+        nb0 = rb7[0]; nb1 = rb7[1]; nb2 = rb7[2]; nb3 = rb7[3]
+
+        var result: int[16]
+        result[0]  = na0; result[1]  = na1; result[2]  = na2; result[3]  = na3
+        result[4]  = nb0; result[5]  = nb1; result[6]  = nb2; result[7]  = nb3
+        result[8]  = nc0; result[9]  = nc1; result[10] = nc2; result[11] = nc3
+        result[12] = nd0; result[13] = nd1; result[14] = nd2; result[15] = nd3
+        return result
+    }
+
+    // AddWord32: modular 32-bit addition, little-endian (LS byte first).
+    fn AddWord32(a0: int, a1: int, a2: int, a3: int,
+                 b0: int, b1: int, b2: int, b3: int) int[4]
+    {
+        var s0: int = a0 + b0
+        var c0: int = s0 / 256
+        var r0: int = s0 % 256
+        var s1: int = a1 + b1 + c0
+        var c1: int = s1 / 256
+        var r1: int = s1 % 256
+        var s2: int = a2 + b2 + c1
+        var c2: int = s2 / 256
+        var r2: int = s2 % 256
+        var s3: int = a3 + b3 + c2
+        var r3: int = s3 % 256
+        var result: int[4]
+        result[0] = r0
+        result[1] = r1
+        result[2] = r2
+        result[3] = r3
+        return result
+    }
+
+    // XorWord32: bitwise XOR of two 32-bit little-endian words (byte-by-byte).
+    fn XorWord32(a0: int, a1: int, a2: int, a3: int,
+                 b0: int, b1: int, b2: int, b3: int) int[4]
+    {
+        var xa: byte = a0 as byte; var xb: byte = b0 as byte; var x0b: byte = xa ^ xb; var x0: int = x0b as int
+        var ya: byte = a1 as byte; var yb: byte = b1 as byte; var x1b: byte = ya ^ yb; var x1: int = x1b as int
+        var za: byte = a2 as byte; var zb: byte = b2 as byte; var x2b: byte = za ^ zb; var x2: int = x2b as int
+        var wa: byte = a3 as byte; var wb: byte = b3 as byte; var x3b: byte = wa ^ wb; var x3: int = x3b as int
+        var result: int[4]
+        result[0] = x0
+        result[1] = x1
+        result[2] = x2
+        result[3] = x3
+        return result
+    }
+
+    // Rotl16: rotate left 32-bit little-endian word by 16 bits.
+    // LE bytes [b0,b1,b2,b3] represent value b0 + b1*256 + b2*65536 + b3*16777216.
+    // Rotl16 swaps the two 16-bit halves: result = (val >> 16) | (val << 16) mod 2^32.
+    // In byte terms: [b2, b3, b0, b1].
+    fn Rotl16(b0: int, b1: int, b2: int, b3: int) int[4]
+    {
+        var result: int[4]
+        result[0] = b2
+        result[1] = b3
+        result[2] = b0
+        result[3] = b1
+        return result
+    }
+
+    // Rotl8: rotate left 32-bit little-endian word by 8 bits.
+    // In byte terms: [b3, b0, b1, b2].
+    fn Rotl8(b0: int, b1: int, b2: int, b3: int) int[4]
+    {
+        var result: int[4]
+        result[0] = b3
+        result[1] = b0
+        result[2] = b1
+        result[3] = b2
+        return result
+    }
+
+    // Rotl12: rotate left 32-bit little-endian word by 12 bits.
+    // 12 bits = 1 byte + 4 bits.
+    // val' = (val << 12) | (val >> 20) mod 2^32.
+    // b0' = (b2 >> 4) | (b3 << 4)  [byte 0 of result]
+    // b1' = (b3 >> 4) | (b0 << 4)
+    // b2' = (b0 >> 4) | (b1 << 4)
+    // b3' = (b1 >> 4) | (b2 << 4)
+    fn Rotl12(b0: int, b1: int, b2: int, b3: int) int[4]
+    {
+        var r0: int = (b2 / 16) + (b3 % 16) * 16
+        var r1: int = (b3 / 16) + (b0 % 16) * 16
+        var r2: int = (b0 / 16) + (b1 % 16) * 16
+        var r3: int = (b1 / 16) + (b2 % 16) * 16
+        var result: int[4]
+        result[0] = r0
+        result[1] = r1
+        result[2] = r2
+        result[3] = r3
+        return result
+    }
+
+    // Rotl7: rotate left 32-bit little-endian word by 7 bits.
+    // val' = (val << 7) | (val >> 25) mod 2^32.
+    // b0' = (b3 >> 1) | (b0 << 7) [only low bit of b0]
+    //      = (b3 / 2) + (b0 % 2) * 128
+    // b1' = (b0 >> 1) + (b1 % 2) * 128
+    // b2' = (b1 >> 1) + (b2 % 2) * 128
+    // b3' = (b2 >> 1) + (b3 % 2) * 128
+    fn Rotl7(b0: int, b1: int, b2: int, b3: int) int[4]
+    {
+        var r0: int = (b3 / 2) + (b0 % 2) * 128
+        var r1: int = (b0 / 2) + (b1 % 2) * 128
+        var r2: int = (b1 / 2) + (b2 % 2) * 128
+        var r3: int = (b2 / 2) + (b3 % 2) * 128
+        var result: int[4]
+        result[0] = r0
+        result[1] = r1
+        result[2] = r2
+        result[3] = r3
+        return result
+    }
+
+    // IncrementCounter: increment the 32-bit little-endian counter.
+    fn IncrementCounter()
+    {
+        var c0: int = this.ctr0
+        var c1: int = this.ctr1
+        var c2: int = this.ctr2
+        var c3: int = this.ctr3
+        c0 = c0 + 1
+        if (c0 == 256)
+        {
+            c0 = 0
+            c1 = c1 + 1
+            if (c1 == 256)
+            {
+                c1 = 0
+                c2 = c2 + 1
+                if (c2 == 256)
+                {
+                    c2 = 0
+                    c3 = c3 + 1
+                    if (c3 == 256)
+                    {
+                        c3 = 0
+                    }
+                }
+            }
+        }
+        this.ctr0 = c0
+        this.ctr1 = c1
+        this.ctr2 = c2
+        this.ctr3 = c3
+    }
+}

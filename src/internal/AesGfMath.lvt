@@ -1,0 +1,102 @@
+namespace Livt.Crypto.Internal
+
+// Pure GF(2^8) arithmetic helpers and AES key schedule Rcon table.
+// No state — every function is a pure computation.
+// Shared by the AES encrypt/decrypt block components.
+// Declared as a class so all calls are zero-overhead VHDL package functions.
+class AesGfMath
+{
+
+    // -----------------------------------------------------------------------
+    // GF(2^8) multiplication — basis for MixColumns and InvMixColumns.
+    // The field polynomial is x^8 + x^4 + x^3 + x + 1 (reduction by 0x1b).
+    // -----------------------------------------------------------------------
+
+    public static inline fn Mul2(a: byte) byte
+    {
+        var aInt: int = a as int
+        var doubled: int = aInt * 2
+        if (aInt >= 128)
+        {
+            var low8: int = doubled - 256
+            var low8byte: byte = low8 as byte
+            return low8byte ^ 0x1b
+        }
+        return doubled as byte
+    }
+
+    // Mul3 = Mul2(a) XOR a  — used by MixColumns.
+    public static inline fn Mul3(a: byte) byte
+    {
+        var m2: byte = AesGfMath.Mul2(a)
+        return m2 ^ a
+    }
+
+    // Mul4, Mul8 build toward the InvMixColumns coefficients.
+    public static inline fn Mul4(a: byte) byte
+    {
+        var m2: byte = AesGfMath.Mul2(a)
+        return AesGfMath.Mul2(m2)
+    }
+
+    public static inline fn Mul8(a: byte) byte
+    {
+        var m4: byte = AesGfMath.Mul4(a)
+        return AesGfMath.Mul2(m4)
+    }
+
+    // Mul9  = Mul8(a) XOR a
+    public static inline fn Mul9(a: byte) byte
+    {
+        var m8: byte = AesGfMath.Mul8(a)
+        return m8 ^ a
+    }
+
+    // Mul11 = Mul8(a) XOR Mul2(a) XOR a
+    public static inline fn Mul11(a: byte) byte
+    {
+        var m8: byte = AesGfMath.Mul8(a)
+        var m2: byte = AesGfMath.Mul2(a)
+        var m8xm2: byte = m8 ^ m2
+        return m8xm2 ^ a
+    }
+
+    // Mul13 = Mul8(a) XOR Mul4(a) XOR a
+    public static inline fn Mul13(a: byte) byte
+    {
+        var m8: byte = AesGfMath.Mul8(a)
+        var m4: byte = AesGfMath.Mul4(a)
+        var m8xm4: byte = m8 ^ m4
+        return m8xm4 ^ a
+    }
+
+    // Mul14 = Mul8(a) XOR Mul4(a) XOR Mul2(a)
+    public static inline fn Mul14(a: byte) byte
+    {
+        var m8: byte = AesGfMath.Mul8(a)
+        var m4: byte = AesGfMath.Mul4(a)
+        var m2: byte = AesGfMath.Mul2(a)
+        var m8xm4: byte = m8 ^ m4
+        return m8xm4 ^ m2
+    }
+
+    // -----------------------------------------------------------------------
+    // AES key schedule round constants.
+    // AES-256 uses indices 1..7.  AES-128 extends to index 10.
+    // -----------------------------------------------------------------------
+
+    public static inline fn GetRcon(rconIdx: int) byte
+    {
+        if (rconIdx == 1)  { return 0x01 }
+        if (rconIdx == 2)  { return 0x02 }
+        if (rconIdx == 3)  { return 0x04 }
+        if (rconIdx == 4)  { return 0x08 }
+        if (rconIdx == 5)  { return 0x10 }
+        if (rconIdx == 6)  { return 0x20 }
+        if (rconIdx == 7)  { return 0x40 }
+        if (rconIdx == 8)  { return 0x80 }
+        if (rconIdx == 9)  { return 0x1b }
+        if (rconIdx == 10) { return 0x36 }
+        return 0x00
+    }
+}

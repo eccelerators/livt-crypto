@@ -1,0 +1,132 @@
+namespace Livt.Crypto.Tests.Aead
+using Livt.Crypto.Aead
+
+
+
+// AES-192 GCM test suite.
+// Reference vectors:
+// key   = feffe9928665731c6d6a8f9467308308feffe9928665731c
+// iv    = cafebabefacedbaddecaf888
+// pt    = d9313225f88406e5a55909c5aff5269a
+// CT    = 3980ca0b3c00e841eb06fac4872a2757
+// Tag   = ca165d0638c5075f35f8358e45ac6a44
+@Test
+component Aes192GcmTest
+{
+    gcm: Aes192Gcm
+
+    new()
+    {
+        this.gcm = new Aes192Gcm()
+    }
+
+    @Test
+    fn TestEncryptNoAAD()
+    {
+        var key: byte[24] = [
+            0xfe, 0xff, 0xe9, 0x92, 0x86, 0x65, 0x73, 0x1c,
+            0x6d, 0x6a, 0x8f, 0x94, 0x67, 0x30, 0x83, 0x08,
+            0xfe, 0xff, 0xe9, 0x92, 0x86, 0x65, 0x73, 0x1c]
+
+        var nonce: byte[12] = [
+            0xca, 0xfe, 0xba, 0xbe, 0xfa, 0xce, 0xdb, 0xad,
+            0xde, 0xca, 0xf8, 0x88]
+
+        var pt: byte[16] = [
+            0xd9, 0x31, 0x32, 0x25, 0xf8, 0x84, 0x06, 0xe5,
+            0xa5, 0x59, 0x09, 0xc5, 0xaf, 0xf5, 0x26, 0x9a]
+
+        this.gcm.SetKey(key)
+        this.gcm.SetNonce(nonce)
+        this.gcm.LoadBlock(pt)
+        this.gcm.EncryptBlock()
+        this.gcm.FinalizeTag(0, 16)
+
+        var ct: byte[16] = this.gcm.GetBlock()
+        assert ct[0]  == 0x39
+        assert ct[1]  == 0x80
+        assert ct[2]  == 0xca
+        assert ct[3]  == 0x0b
+        assert ct[4]  == 0x3c
+        assert ct[5]  == 0x00
+        assert ct[6]  == 0xe8
+        assert ct[7]  == 0x41
+        assert ct[8]  == 0xeb
+        assert ct[9]  == 0x06
+        assert ct[10] == 0xfa
+        assert ct[11] == 0xc4
+        assert ct[12] == 0x87
+        assert ct[13] == 0x2a
+        assert ct[14] == 0x27
+        assert ct[15] == 0x57
+
+        var tag: byte[16] = this.gcm.GetTag()
+        assert tag[0]  == 0xca
+        assert tag[1]  == 0x16
+        assert tag[2]  == 0x5d
+        assert tag[3]  == 0x06
+        assert tag[4]  == 0x38
+        assert tag[5]  == 0xc5
+        assert tag[6]  == 0x07
+        assert tag[7]  == 0x5f
+        assert tag[8]  == 0x35
+        assert tag[9]  == 0xf8
+        assert tag[10] == 0x35
+        assert tag[11] == 0x8e
+        assert tag[12] == 0x45
+        assert tag[13] == 0xac
+        assert tag[14] == 0x6a
+        assert tag[15] == 0x44
+
+        var ok: int = this.gcm.VerifyTag(tag)
+        assert ok == 1
+        tag[0] = tag[0] ^ 0x01
+        var bad: int = this.gcm.VerifyTag(tag)
+        assert bad == 0
+    }
+
+    @Test
+    fn TestDecryptRoundtrip()
+    {
+        var key: byte[24] = [
+            0xfe, 0xff, 0xe9, 0x92, 0x86, 0x65, 0x73, 0x1c,
+            0x6d, 0x6a, 0x8f, 0x94, 0x67, 0x30, 0x83, 0x08,
+            0xfe, 0xff, 0xe9, 0x92, 0x86, 0x65, 0x73, 0x1c]
+
+        var nonce: byte[12] = [
+            0xca, 0xfe, 0xba, 0xbe, 0xfa, 0xce, 0xdb, 0xad,
+            0xde, 0xca, 0xf8, 0x88]
+
+        var pt: byte[16] = [
+            0xd9, 0x31, 0x32, 0x25, 0xf8, 0x84, 0x06, 0xe5,
+            0xa5, 0x59, 0x09, 0xc5, 0xaf, 0xf5, 0x26, 0x9a]
+
+        this.gcm.SetKey(key)
+        this.gcm.SetNonce(nonce)
+        this.gcm.LoadBlock(pt)
+        this.gcm.EncryptBlock()
+        var ct: byte[16] = this.gcm.GetBlock()
+
+        this.gcm.SetNonce(nonce)
+        this.gcm.LoadBlock(ct)
+        this.gcm.DecryptBlock()
+        var recovered: byte[16] = this.gcm.GetBlock()
+
+        assert recovered[0]  == pt[0]
+        assert recovered[1]  == pt[1]
+        assert recovered[2]  == pt[2]
+        assert recovered[3]  == pt[3]
+        assert recovered[4]  == pt[4]
+        assert recovered[5]  == pt[5]
+        assert recovered[6]  == pt[6]
+        assert recovered[7]  == pt[7]
+        assert recovered[8]  == pt[8]
+        assert recovered[9]  == pt[9]
+        assert recovered[10] == pt[10]
+        assert recovered[11] == pt[11]
+        assert recovered[12] == pt[12]
+        assert recovered[13] == pt[13]
+        assert recovered[14] == pt[14]
+        assert recovered[15] == pt[15]
+    }
+}

@@ -1,0 +1,669 @@
+namespace Livt.Crypto.Hash
+
+// SHA-512 (NIST FIPS 180-4) — single-block, 1024-bit input / 512-bit output.
+//
+// Usage (per message, one 1024-bit block at a time):
+//   1. Reset()                     — initialise H0..H7 to FIPS initial values
+//   2. ProcessBlock(msg)           — compress one 128-byte block
+//      Repeat 2 for each block.
+//   3. GetDigest() byte[64]        — return current 512-bit digest
+//
+// Caller is responsible for SHA-512 padding (append 0x80, zeros, 128-bit big-endian
+// bit-length) before calling ProcessBlock.
+component Sha512
+{
+    public const BLOCK_SIZE:  int = 128
+    public const DIGEST_SIZE: int = 64
+
+    h: byte[64]    // H0..H7: 8 × 8 bytes big-endian
+    W: byte[640]   // Message schedule: 80 words × 8 bytes big-endian
+
+    // SHA-512 round constants K[0..79] split by byte position (big-endian).
+    // K0[i] = MSByte(K[i]), K7[i] = LSByte(K[i]).
+    const K0: byte[80] = [
+        0x42, 0x71, 0xb5, 0xe9, 0x39, 0x59, 0x92, 0xab,
+        0xd8, 0x12, 0x24, 0x55, 0x72, 0x80, 0x9b, 0xc1,
+        0xe4, 0xef, 0x0f, 0x24, 0x2d, 0x4a, 0x5c, 0x76,
+        0x98, 0xa8, 0xb0, 0xbf, 0xc6, 0xd5, 0x06, 0x14,
+        0x27, 0x2e, 0x4d, 0x53, 0x65, 0x76, 0x81, 0x92,
+        0xa2, 0xa8, 0xc2, 0xc7, 0xd1, 0xd6, 0xf4, 0x10,
+        0x19, 0x1e, 0x27, 0x34, 0x39, 0x4e, 0x5b, 0x68,
+        0x74, 0x78, 0x84, 0x8c, 0x90, 0xa4, 0xbe, 0xc6,
+        0xca, 0xd1, 0xea, 0xf5, 0x06, 0x0a, 0x11, 0x1b,
+        0x28, 0x32, 0x3c, 0x43, 0x4c, 0x59, 0x5f, 0x6c]
+    const K1: byte[80] = [
+        0x8a, 0x37, 0xc0, 0xb5, 0x56, 0xf1, 0x3f, 0x1c,
+        0x07, 0x83, 0x31, 0x0c, 0xbe, 0xde, 0xdc, 0x9b,
+        0x9b, 0xbe, 0xc1, 0x0c, 0xe9, 0x74, 0xb0, 0xf9,
+        0x3e, 0x31, 0x03, 0x59, 0xe0, 0xa7, 0xca, 0x29,
+        0xb7, 0x1b, 0x2c, 0x38, 0x0a, 0x6a, 0xc2, 0x72,
+        0xbf, 0x1a, 0x4b, 0x6c, 0x92, 0x99, 0x0e, 0x6a,
+        0xa4, 0x37, 0x48, 0xb0, 0x1c, 0xd8, 0x9c, 0x2e,
+        0x8f, 0xa5, 0xc8, 0xc7, 0xbe, 0x50, 0xf9, 0x71,
+        0x27, 0x86, 0xda, 0x7d, 0xf0, 0x63, 0x3f, 0x71,
+        0xdb, 0xca, 0x9e, 0x1d, 0xc5, 0x7f, 0xcb, 0x44]
+    const K2: byte[80] = [
+        0x2f, 0x44, 0xfb, 0xdb, 0xc2, 0x11, 0x82, 0x5e,
+        0xaa, 0x5b, 0x85, 0x7d, 0x5d, 0xb1, 0x06, 0xf1,
+        0x69, 0x47, 0x9d, 0xa1, 0x2c, 0x84, 0xa9, 0x88,
+        0x51, 0xc6, 0x27, 0x7f, 0x0b, 0x91, 0x63, 0x29,
+        0x0a, 0x21, 0x6d, 0x0d, 0x73, 0x0a, 0xc9, 0x2c,
+        0xe8, 0x66, 0x8b, 0x51, 0xe8, 0x06, 0x35, 0xa0,
+        0xc1, 0x6c, 0x77, 0xbc, 0x0c, 0xaa, 0xca, 0x6f,
+        0x82, 0x63, 0x78, 0x02, 0xff, 0x6c, 0xa3, 0x78,
+        0x3e, 0xb8, 0x7d, 0x4f, 0x67, 0x7d, 0x98, 0x0b,
+        0x77, 0xab, 0xbe, 0x67, 0xd4, 0x29, 0x6f, 0x19]
+    const K3: byte[80] = [
+        0x98, 0x91, 0xcf, 0xa5, 0x5b, 0xf1, 0xa4, 0xd5,
+        0x98, 0x01, 0xbe, 0xc3, 0x74, 0xfe, 0xa7, 0x74,
+        0xc1, 0x86, 0xc6, 0xcc, 0x6f, 0xaa, 0xdc, 0xda,
+        0x52, 0x6d, 0xc8, 0xc7, 0xf3, 0x47, 0x51, 0x67,
+        0x85, 0x38, 0xfc, 0x13, 0x54, 0xbb, 0x2e, 0x85,
+        0xa1, 0x4b, 0x70, 0xa3, 0x19, 0x24, 0x85, 0x70,
+        0x16, 0x08, 0x4c, 0xb5, 0xb3, 0x4a, 0x4f, 0xf3,
+        0xee, 0x6f, 0x14, 0x08, 0xfa, 0xeb, 0xf7, 0xf2,
+        0xce, 0xc7, 0xd6, 0x7f, 0xaa, 0xc5, 0x04, 0x35,
+        0xf5, 0x7b, 0x0a, 0xc4, 0xbe, 0x9c, 0xab, 0x8c]
+    const K4: byte[80] = [
+        0xd7, 0x23, 0xec, 0x81, 0xf3, 0xb6, 0xaf, 0xda,
+        0xa3, 0x45, 0x4e, 0xd5, 0xf2, 0x3b, 0x25, 0xcf,
+        0x9e, 0x38, 0x8b, 0x77, 0x59, 0x6e, 0xbd, 0x83,
+        0xee, 0x2d, 0x98, 0xbe, 0x3d, 0x93, 0xe0, 0x0a,
+        0x46, 0x5c, 0x5a, 0x9d, 0x8b, 0x3c, 0x47, 0x14,
+        0x4c, 0xbc, 0xd0, 0x06, 0xd6, 0x55, 0x57, 0x32,
+        0xb8, 0x51, 0xdf, 0xe1, 0xc5, 0xe3, 0x77, 0xd6,
+        0x5d, 0x43, 0xa1, 0x1a, 0x23, 0xde, 0xb2, 0xe3,
+        0xea, 0x21, 0xcd, 0xee, 0x72, 0xa2, 0xbe, 0x13,
+        0x23, 0x40, 0x15, 0x9c, 0xcb, 0xfc, 0x3a, 0x4a]
+    const K5: byte[80] = [
+        0x28, 0xef, 0x4d, 0x89, 0x48, 0x05, 0x19, 0x6d,
+        0x03, 0x70, 0xe4, 0xff, 0x7b, 0x16, 0xc7, 0x69,
+        0xf1, 0x4f, 0x8c, 0xac, 0x2b, 0xa6, 0x41, 0x11,
+        0x66, 0xb4, 0xfb, 0xef, 0xa8, 0x0a, 0x03, 0x0e,
+        0xd2, 0x26, 0xc4, 0x95, 0xaf, 0x77, 0xed, 0x82,
+        0xf1, 0x42, 0xf8, 0x54, 0xef, 0x65, 0x71, 0xbb,
+        0xd2, 0x41, 0x8e, 0x9b, 0xc9, 0x41, 0x63, 0xb2,
+        0xef, 0x17, 0xf0, 0x64, 0x63, 0x82, 0xc6, 0x72,
+        0x26, 0xc0, 0xe0, 0x6e, 0x17, 0xc8, 0xf9, 0x1c,
+        0x04, 0xc7, 0xc9, 0x10, 0x3e, 0x65, 0xd6, 0x47]
+    const K6: byte[80] = [
+        0xae, 0x65, 0x3b, 0xdb, 0xb5, 0xd0, 0x4f, 0x81,
+        0x02, 0x6f, 0xb2, 0xb4, 0x89, 0x96, 0x12, 0x26,
+        0x4a, 0x25, 0xd5, 0x9c, 0x02, 0xe4, 0xfb, 0x53,
+        0xdf, 0x32, 0x21, 0x0e, 0x8f, 0xa7, 0x82, 0x6e,
+        0x2f, 0xc9, 0x2a, 0xb3, 0x63, 0xb2, 0xae, 0x35,
+        0x03, 0x30, 0x97, 0xbe, 0x52, 0xa9, 0x20, 0xd1,
+        0xd0, 0xab, 0xeb, 0x48, 0x5a, 0x8a, 0xe3, 0xb8,
+        0xb2, 0x2f, 0xab, 0x39, 0x1e, 0xbd, 0x79, 0x53,
+        0x61, 0xc2, 0xeb, 0xd1, 0x6f, 0x98, 0x0d, 0x47,
+        0x7d, 0x24, 0xbe, 0x0d, 0x42, 0x7e, 0xfa, 0x58]
+    const K7: byte[80] = [
+        0x22, 0xcd, 0x2f, 0xbc, 0x38, 0x19, 0x9b, 0x18,
+        0x42, 0xbe, 0x8c, 0xe2, 0x6f, 0xb1, 0x35, 0x94,
+        0xd2, 0xe3, 0xb5, 0x65, 0x75, 0x83, 0xd4, 0xb5,
+        0xab, 0x10, 0x3f, 0xe4, 0xc2, 0x25, 0x6f, 0x70,
+        0xfc, 0x26, 0xed, 0xdf, 0xde, 0xa8, 0xe6, 0x3b,
+        0x64, 0x01, 0x91, 0x30, 0x18, 0x10, 0x2a, 0xb8,
+        0xc8, 0x53, 0x99, 0xa8, 0x63, 0xcb, 0x73, 0xa3,
+        0xfc, 0x60, 0x72, 0xec, 0x28, 0xe9, 0x15, 0x2b,
+        0x9c, 0x07, 0x1e, 0x78, 0xba, 0xa6, 0xae, 0x1b,
+        0x84, 0x93, 0xbc, 0x4c, 0xb6, 0x2a, 0xec, 0x17]
+
+    new()
+    {
+    }
+
+    // -----------------------------------------------------------------------
+    // Public API
+    // -----------------------------------------------------------------------
+
+    // Reset initialises H0..H7 to SHA-512 initial hash values (FIPS 180-4 §5.3.5).
+    public fn Reset()
+    {
+        var init: byte[64] = [
+            0x6a, 0x09, 0xe6, 0x67, 0xf3, 0xbc, 0xc9, 0x08,
+            0xbb, 0x67, 0xae, 0x85, 0x84, 0xca, 0xa7, 0x3b,
+            0x3c, 0x6e, 0xf3, 0x72, 0xfe, 0x94, 0xf8, 0x2b,
+            0xa5, 0x4f, 0xf5, 0x3a, 0x5f, 0x1d, 0x36, 0xf1,
+            0x51, 0x0e, 0x52, 0x7f, 0xad, 0xe6, 0x82, 0xd1,
+            0x9b, 0x05, 0x68, 0x8c, 0x2b, 0x3e, 0x6c, 0x1f,
+            0x1f, 0x83, 0xd9, 0xab, 0xfb, 0x41, 0xbd, 0x6b,
+            0x5b, 0xe0, 0xcd, 0x19, 0x13, 0x7e, 0x21, 0x79]
+        for (var i = 0; i < 64; i++)
+        {
+            this.h[i] = init[i]
+        }
+    }
+
+    // ProcessBlock compresses one 128-byte (1024-bit) message block.
+    // Call Reset() before the first block. For multi-block messages call
+    // ProcessBlock once per block; do NOT call Reset() between blocks.
+    public fn ProcessBlock(msg: byte[128])
+    {
+        // Initialise working variables from current hash state.
+        var ha0: byte = this.h[0];  var ha1: byte = this.h[1];  var ha2: byte = this.h[2];  var ha3: byte = this.h[3]
+        var ha4: byte = this.h[4];  var ha5: byte = this.h[5];  var ha6: byte = this.h[6];  var ha7: byte = this.h[7]
+        var hb0: byte = this.h[8];  var hb1: byte = this.h[9];  var hb2: byte = this.h[10]; var hb3: byte = this.h[11]
+        var hb4: byte = this.h[12]; var hb5: byte = this.h[13]; var hb6: byte = this.h[14]; var hb7: byte = this.h[15]
+        var hc0: byte = this.h[16]; var hc1: byte = this.h[17]; var hc2: byte = this.h[18]; var hc3: byte = this.h[19]
+        var hc4: byte = this.h[20]; var hc5: byte = this.h[21]; var hc6: byte = this.h[22]; var hc7: byte = this.h[23]
+        var hd0: byte = this.h[24]; var hd1: byte = this.h[25]; var hd2: byte = this.h[26]; var hd3: byte = this.h[27]
+        var hd4: byte = this.h[28]; var hd5: byte = this.h[29]; var hd6: byte = this.h[30]; var hd7: byte = this.h[31]
+        var he0: byte = this.h[32]; var he1: byte = this.h[33]; var he2: byte = this.h[34]; var he3: byte = this.h[35]
+        var he4: byte = this.h[36]; var he5: byte = this.h[37]; var he6: byte = this.h[38]; var he7: byte = this.h[39]
+        var hf0: byte = this.h[40]; var hf1: byte = this.h[41]; var hf2: byte = this.h[42]; var hf3: byte = this.h[43]
+        var hf4: byte = this.h[44]; var hf5: byte = this.h[45]; var hf6: byte = this.h[46]; var hf7: byte = this.h[47]
+        var hg0: byte = this.h[48]; var hg1: byte = this.h[49]; var hg2: byte = this.h[50]; var hg3: byte = this.h[51]
+        var hg4: byte = this.h[52]; var hg5: byte = this.h[53]; var hg6: byte = this.h[54]; var hg7: byte = this.h[55]
+        var hh0: byte = this.h[56]; var hh1: byte = this.h[57]; var hh2: byte = this.h[58]; var hh3: byte = this.h[59]
+        var hh4: byte = this.h[60]; var hh5: byte = this.h[61]; var hh6: byte = this.h[62]; var hh7: byte = this.h[63]
+        var a0: byte = ha0; var a1: byte = ha1; var a2: byte = ha2; var a3: byte = ha3
+        var a4: byte = ha4; var a5: byte = ha5; var a6: byte = ha6; var a7: byte = ha7
+        var b0: byte = hb0; var b1: byte = hb1; var b2: byte = hb2; var b3: byte = hb3
+        var b4: byte = hb4; var b5: byte = hb5; var b6: byte = hb6; var b7: byte = hb7
+        var c0: byte = hc0; var c1: byte = hc1; var c2: byte = hc2; var c3: byte = hc3
+        var c4: byte = hc4; var c5: byte = hc5; var c6: byte = hc6; var c7: byte = hc7
+        var d0: byte = hd0; var d1: byte = hd1; var d2: byte = hd2; var d3: byte = hd3
+        var d4: byte = hd4; var d5: byte = hd5; var d6: byte = hd6; var d7: byte = hd7
+        var e0: byte = he0; var e1: byte = he1; var e2: byte = he2; var e3: byte = he3
+        var e4: byte = he4; var e5: byte = he5; var e6: byte = he6; var e7: byte = he7
+        var f0: byte = hf0; var f1: byte = hf1; var f2: byte = hf2; var f3: byte = hf3
+        var f4: byte = hf4; var f5: byte = hf5; var f6: byte = hf6; var f7: byte = hf7
+        var g0: byte = hg0; var g1: byte = hg1; var g2: byte = hg2; var g3: byte = hg3
+        var g4: byte = hg4; var g5: byte = hg5; var g6: byte = hg6; var g7: byte = hg7
+        var wh0: byte = hh0; var wh1: byte = hh1; var wh2: byte = hh2; var wh3: byte = hh3
+        var wh4: byte = hh4; var wh5: byte = hh5; var wh6: byte = hh6; var wh7: byte = hh7
+
+        // Copy first 16 words (128 bytes) from msg into this.W[0..127].
+        this.W[0]   = msg[0];   this.W[1]   = msg[1];   this.W[2]   = msg[2];   this.W[3]   = msg[3]
+        this.W[4]   = msg[4];   this.W[5]   = msg[5];   this.W[6]   = msg[6];   this.W[7]   = msg[7]
+        this.W[8]   = msg[8];   this.W[9]   = msg[9];   this.W[10]  = msg[10];  this.W[11]  = msg[11]
+        this.W[12]  = msg[12];  this.W[13]  = msg[13];  this.W[14]  = msg[14];  this.W[15]  = msg[15]
+        this.W[16]  = msg[16];  this.W[17]  = msg[17];  this.W[18]  = msg[18];  this.W[19]  = msg[19]
+        this.W[20]  = msg[20];  this.W[21]  = msg[21];  this.W[22]  = msg[22];  this.W[23]  = msg[23]
+        this.W[24]  = msg[24];  this.W[25]  = msg[25];  this.W[26]  = msg[26];  this.W[27]  = msg[27]
+        this.W[28]  = msg[28];  this.W[29]  = msg[29];  this.W[30]  = msg[30];  this.W[31]  = msg[31]
+        this.W[32]  = msg[32];  this.W[33]  = msg[33];  this.W[34]  = msg[34];  this.W[35]  = msg[35]
+        this.W[36]  = msg[36];  this.W[37]  = msg[37];  this.W[38]  = msg[38];  this.W[39]  = msg[39]
+        this.W[40]  = msg[40];  this.W[41]  = msg[41];  this.W[42]  = msg[42];  this.W[43]  = msg[43]
+        this.W[44]  = msg[44];  this.W[45]  = msg[45];  this.W[46]  = msg[46];  this.W[47]  = msg[47]
+        this.W[48]  = msg[48];  this.W[49]  = msg[49];  this.W[50]  = msg[50];  this.W[51]  = msg[51]
+        this.W[52]  = msg[52];  this.W[53]  = msg[53];  this.W[54]  = msg[54];  this.W[55]  = msg[55]
+        this.W[56]  = msg[56];  this.W[57]  = msg[57];  this.W[58]  = msg[58];  this.W[59]  = msg[59]
+        this.W[60]  = msg[60];  this.W[61]  = msg[61];  this.W[62]  = msg[62];  this.W[63]  = msg[63]
+        this.W[64]  = msg[64];  this.W[65]  = msg[65];  this.W[66]  = msg[66];  this.W[67]  = msg[67]
+        this.W[68]  = msg[68];  this.W[69]  = msg[69];  this.W[70]  = msg[70];  this.W[71]  = msg[71]
+        this.W[72]  = msg[72];  this.W[73]  = msg[73];  this.W[74]  = msg[74];  this.W[75]  = msg[75]
+        this.W[76]  = msg[76];  this.W[77]  = msg[77];  this.W[78]  = msg[78];  this.W[79]  = msg[79]
+        this.W[80]  = msg[80];  this.W[81]  = msg[81];  this.W[82]  = msg[82];  this.W[83]  = msg[83]
+        this.W[84]  = msg[84];  this.W[85]  = msg[85];  this.W[86]  = msg[86];  this.W[87]  = msg[87]
+        this.W[88]  = msg[88];  this.W[89]  = msg[89];  this.W[90]  = msg[90];  this.W[91]  = msg[91]
+        this.W[92]  = msg[92];  this.W[93]  = msg[93];  this.W[94]  = msg[94];  this.W[95]  = msg[95]
+        this.W[96]  = msg[96];  this.W[97]  = msg[97];  this.W[98]  = msg[98];  this.W[99]  = msg[99]
+        this.W[100] = msg[100]; this.W[101] = msg[101]; this.W[102] = msg[102]; this.W[103] = msg[103]
+        this.W[104] = msg[104]; this.W[105] = msg[105]; this.W[106] = msg[106]; this.W[107] = msg[107]
+        this.W[108] = msg[108]; this.W[109] = msg[109]; this.W[110] = msg[110]; this.W[111] = msg[111]
+        this.W[112] = msg[112]; this.W[113] = msg[113]; this.W[114] = msg[114]; this.W[115] = msg[115]
+        this.W[116] = msg[116]; this.W[117] = msg[117]; this.W[118] = msg[118]; this.W[119] = msg[119]
+        this.W[120] = msg[120]; this.W[121] = msg[121]; this.W[122] = msg[122]; this.W[123] = msg[123]
+        this.W[124] = msg[124]; this.W[125] = msg[125]; this.W[126] = msg[126]; this.W[127] = msg[127]
+
+        // Extend message schedule W[16..79].
+        for (var j = 16; j < 80; j++)
+        {
+            var jm2:  int = (j - 2)  * 8
+            var jm7:  int = (j - 7)  * 8
+            var jm15: int = (j - 15) * 8
+            var jm16: int = (j - 16) * 8
+            var jm2p1:  int = jm2  + 1; var jm2p2:  int = jm2  + 2; var jm2p3:  int = jm2  + 3
+            var jm2p4:  int = jm2  + 4; var jm2p5:  int = jm2  + 5; var jm2p6:  int = jm2  + 6; var jm2p7:  int = jm2  + 7
+            var jm7p1:  int = jm7  + 1; var jm7p2:  int = jm7  + 2; var jm7p3:  int = jm7  + 3
+            var jm7p4:  int = jm7  + 4; var jm7p5:  int = jm7  + 5; var jm7p6:  int = jm7  + 6; var jm7p7:  int = jm7  + 7
+            var jm15p1: int = jm15 + 1; var jm15p2: int = jm15 + 2; var jm15p3: int = jm15 + 3
+            var jm15p4: int = jm15 + 4; var jm15p5: int = jm15 + 5; var jm15p6: int = jm15 + 6; var jm15p7: int = jm15 + 7
+            var jm16p1: int = jm16 + 1; var jm16p2: int = jm16 + 2; var jm16p3: int = jm16 + 3
+            var jm16p4: int = jm16 + 4; var jm16p5: int = jm16 + 5; var jm16p6: int = jm16 + 6; var jm16p7: int = jm16 + 7
+
+            var wm2b0:  byte = this.W[jm2];    var wm2b1:  byte = this.W[jm2p1]
+            var wm2b2:  byte = this.W[jm2p2];  var wm2b3:  byte = this.W[jm2p3]
+            var wm2b4:  byte = this.W[jm2p4];  var wm2b5:  byte = this.W[jm2p5]
+            var wm2b6:  byte = this.W[jm2p6];  var wm2b7:  byte = this.W[jm2p7]
+            var wm7b0:  byte = this.W[jm7];    var wm7b1:  byte = this.W[jm7p1]
+            var wm7b2:  byte = this.W[jm7p2];  var wm7b3:  byte = this.W[jm7p3]
+            var wm7b4:  byte = this.W[jm7p4];  var wm7b5:  byte = this.W[jm7p5]
+            var wm7b6:  byte = this.W[jm7p6];  var wm7b7:  byte = this.W[jm7p7]
+            var wm15b0: byte = this.W[jm15];   var wm15b1: byte = this.W[jm15p1]
+            var wm15b2: byte = this.W[jm15p2]; var wm15b3: byte = this.W[jm15p3]
+            var wm15b4: byte = this.W[jm15p4]; var wm15b5: byte = this.W[jm15p5]
+            var wm15b6: byte = this.W[jm15p6]; var wm15b7: byte = this.W[jm15p7]
+            var wm16b0: byte = this.W[jm16];   var wm16b1: byte = this.W[jm16p1]
+            var wm16b2: byte = this.W[jm16p2]; var wm16b3: byte = this.W[jm16p3]
+            var wm16b4: byte = this.W[jm16p4]; var wm16b5: byte = this.W[jm16p5]
+            var wm16b6: byte = this.W[jm16p6]; var wm16b7: byte = this.W[jm16p7]
+
+            var ls1: byte[8] = this.LilSigma1(wm2b0, wm2b1, wm2b2, wm2b3, wm2b4, wm2b5, wm2b6, wm2b7)
+            var ls1b0: byte = ls1[0]; var ls1b1: byte = ls1[1]; var ls1b2: byte = ls1[2]; var ls1b3: byte = ls1[3]
+            var ls1b4: byte = ls1[4]; var ls1b5: byte = ls1[5]; var ls1b6: byte = ls1[6]; var ls1b7: byte = ls1[7]
+            var ls0: byte[8] = this.LilSigma0(wm15b0, wm15b1, wm15b2, wm15b3, wm15b4, wm15b5, wm15b6, wm15b7)
+            var ls0b0: byte = ls0[0]; var ls0b1: byte = ls0[1]; var ls0b2: byte = ls0[2]; var ls0b3: byte = ls0[3]
+            var ls0b4: byte = ls0[4]; var ls0b5: byte = ls0[5]; var ls0b6: byte = ls0[6]; var ls0b7: byte = ls0[7]
+            var s1: byte[8] = this.AddWord(ls1b0, ls1b1, ls1b2, ls1b3, ls1b4, ls1b5, ls1b6, ls1b7,
+                                           wm7b0, wm7b1, wm7b2, wm7b3, wm7b4, wm7b5, wm7b6, wm7b7)
+            var s1b0: byte = s1[0]; var s1b1: byte = s1[1]; var s1b2: byte = s1[2]; var s1b3: byte = s1[3]
+            var s1b4: byte = s1[4]; var s1b5: byte = s1[5]; var s1b6: byte = s1[6]; var s1b7: byte = s1[7]
+            var s2: byte[8] = this.AddWord(s1b0, s1b1, s1b2, s1b3, s1b4, s1b5, s1b6, s1b7,
+                                           ls0b0, ls0b1, ls0b2, ls0b3, ls0b4, ls0b5, ls0b6, ls0b7)
+            var s2b0: byte = s2[0]; var s2b1: byte = s2[1]; var s2b2: byte = s2[2]; var s2b3: byte = s2[3]
+            var s2b4: byte = s2[4]; var s2b5: byte = s2[5]; var s2b6: byte = s2[6]; var s2b7: byte = s2[7]
+            var wj: byte[8] = this.AddWord(s2b0, s2b1, s2b2, s2b3, s2b4, s2b5, s2b6, s2b7,
+                                           wm16b0, wm16b1, wm16b2, wm16b3, wm16b4, wm16b5, wm16b6, wm16b7)
+            var wjb0: byte = wj[0]; var wjb1: byte = wj[1]; var wjb2: byte = wj[2]; var wjb3: byte = wj[3]
+            var wjb4: byte = wj[4]; var wjb5: byte = wj[5]; var wjb6: byte = wj[6]; var wjb7: byte = wj[7]
+
+            var jbase: int = j * 8
+            var jbp1:  int = jbase + 1; var jbp2: int = jbase + 2; var jbp3: int = jbase + 3
+            var jbp4:  int = jbase + 4; var jbp5: int = jbase + 5; var jbp6: int = jbase + 6; var jbp7: int = jbase + 7
+            this.W[jbase] = wjb0; this.W[jbp1] = wjb1; this.W[jbp2] = wjb2; this.W[jbp3] = wjb3
+            this.W[jbp4]  = wjb4; this.W[jbp5] = wjb5; this.W[jbp6] = wjb6; this.W[jbp7] = wjb7
+        }
+
+        // 80-round compression.
+        for (var i = 0; i < 80; i++)
+        {
+            var ki0: byte = this.K0[i]; var ki1: byte = this.K1[i]; var ki2: byte = this.K2[i]; var ki3: byte = this.K3[i]
+            var ki4: byte = this.K4[i]; var ki5: byte = this.K5[i]; var ki6: byte = this.K6[i]; var ki7: byte = this.K7[i]
+
+            var ibase: int = i * 8
+            var ibp1:  int = ibase + 1; var ibp2: int = ibase + 2; var ibp3: int = ibase + 3
+            var ibp4:  int = ibase + 4; var ibp5: int = ibase + 5; var ibp6: int = ibase + 6; var ibp7: int = ibase + 7
+            var ww0: byte = this.W[ibase]; var ww1: byte = this.W[ibp1]; var ww2: byte = this.W[ibp2]; var ww3: byte = this.W[ibp3]
+            var ww4: byte = this.W[ibp4]; var ww5: byte = this.W[ibp5]; var ww6: byte = this.W[ibp6]; var ww7: byte = this.W[ibp7]
+
+            var bsig1e: byte[8] = this.BigSigma1(e0, e1, e2, e3, e4, e5, e6, e7)
+            var bsig1e0: byte = bsig1e[0]; var bsig1e1: byte = bsig1e[1]; var bsig1e2: byte = bsig1e[2]; var bsig1e3: byte = bsig1e[3]
+            var bsig1e4: byte = bsig1e[4]; var bsig1e5: byte = bsig1e[5]; var bsig1e6: byte = bsig1e[6]; var bsig1e7: byte = bsig1e[7]
+
+            var cval: byte[8] = this.Ch(e0, e1, e2, e3, e4, e5, e6, e7, f0, f1, f2, f3, f4, f5, f6, f7,
+                                        g0, g1, g2, g3, g4, g5, g6, g7)
+            var cval0: byte = cval[0]; var cval1: byte = cval[1]; var cval2: byte = cval[2]; var cval3: byte = cval[3]
+            var cval4: byte = cval[4]; var cval5: byte = cval[5]; var cval6: byte = cval[6]; var cval7: byte = cval[7]
+
+            // T1 = wh + BigSigma1(e) + Ch(e,f,g) + K[i] + W[i]
+            var t1a: byte[8] = this.AddWord(wh0, wh1, wh2, wh3, wh4, wh5, wh6, wh7,
+                                            bsig1e0, bsig1e1, bsig1e2, bsig1e3, bsig1e4, bsig1e5, bsig1e6, bsig1e7)
+            var t1a0: byte = t1a[0]; var t1a1: byte = t1a[1]; var t1a2: byte = t1a[2]; var t1a3: byte = t1a[3]
+            var t1a4: byte = t1a[4]; var t1a5: byte = t1a[5]; var t1a6: byte = t1a[6]; var t1a7: byte = t1a[7]
+            var t1b: byte[8] = this.AddWord(t1a0, t1a1, t1a2, t1a3, t1a4, t1a5, t1a6, t1a7,
+                                            cval0, cval1, cval2, cval3, cval4, cval5, cval6, cval7)
+            var t1b0: byte = t1b[0]; var t1b1: byte = t1b[1]; var t1b2: byte = t1b[2]; var t1b3: byte = t1b[3]
+            var t1b4: byte = t1b[4]; var t1b5: byte = t1b[5]; var t1b6: byte = t1b[6]; var t1b7: byte = t1b[7]
+            var t1c: byte[8] = this.AddWord(t1b0, t1b1, t1b2, t1b3, t1b4, t1b5, t1b6, t1b7,
+                                            ki0, ki1, ki2, ki3, ki4, ki5, ki6, ki7)
+            var t1c0: byte = t1c[0]; var t1c1: byte = t1c[1]; var t1c2: byte = t1c[2]; var t1c3: byte = t1c[3]
+            var t1c4: byte = t1c[4]; var t1c5: byte = t1c[5]; var t1c6: byte = t1c[6]; var t1c7: byte = t1c[7]
+            var t1:  byte[8] = this.AddWord(t1c0, t1c1, t1c2, t1c3, t1c4, t1c5, t1c6, t1c7,
+                                            ww0, ww1, ww2, ww3, ww4, ww5, ww6, ww7)
+            var t10: byte = t1[0]; var t11: byte = t1[1]; var t12: byte = t1[2]; var t13: byte = t1[3]
+            var t14: byte = t1[4]; var t15: byte = t1[5]; var t16: byte = t1[6]; var t17: byte = t1[7]
+
+            var bsig0a: byte[8] = this.BigSigma0(a0, a1, a2, a3, a4, a5, a6, a7)
+            var bsig0a0: byte = bsig0a[0]; var bsig0a1: byte = bsig0a[1]; var bsig0a2: byte = bsig0a[2]; var bsig0a3: byte = bsig0a[3]
+            var bsig0a4: byte = bsig0a[4]; var bsig0a5: byte = bsig0a[5]; var bsig0a6: byte = bsig0a[6]; var bsig0a7: byte = bsig0a[7]
+
+            var mval: byte[8] = this.Maj(a0, a1, a2, a3, a4, a5, a6, a7, b0, b1, b2, b3, b4, b5, b6, b7,
+                                         c0, c1, c2, c3, c4, c5, c6, c7)
+            var mval0: byte = mval[0]; var mval1: byte = mval[1]; var mval2: byte = mval[2]; var mval3: byte = mval[3]
+            var mval4: byte = mval[4]; var mval5: byte = mval[5]; var mval6: byte = mval[6]; var mval7: byte = mval[7]
+
+            // T2 = BigSigma0(a) + Maj(a,b,c)
+            var t2: byte[8] = this.AddWord(bsig0a0, bsig0a1, bsig0a2, bsig0a3, bsig0a4, bsig0a5, bsig0a6, bsig0a7,
+                                           mval0, mval1, mval2, mval3, mval4, mval5, mval6, mval7)
+            var t20: byte = t2[0]; var t21: byte = t2[1]; var t22: byte = t2[2]; var t23: byte = t2[3]
+            var t24: byte = t2[4]; var t25: byte = t2[5]; var t26: byte = t2[6]; var t27: byte = t2[7]
+
+            // Compute new e = d + T1  and  new a = T1 + T2  before shifting.
+            var ne: byte[8] = this.AddWord(d0, d1, d2, d3, d4, d5, d6, d7, t10, t11, t12, t13, t14, t15, t16, t17)
+            var na: byte[8] = this.AddWord(t10, t11, t12, t13, t14, t15, t16, t17, t20, t21, t22, t23, t24, t25, t26, t27)
+
+            // Rotate: h=g, g=f, f=e, e=ne, d=c, c=b, b=a, a=na
+            wh0 = g0; wh1 = g1; wh2 = g2; wh3 = g3; wh4 = g4; wh5 = g5; wh6 = g6; wh7 = g7
+            g0 = f0; g1 = f1; g2 = f2; g3 = f3; g4 = f4; g5 = f5; g6 = f6; g7 = f7
+            f0 = e0; f1 = e1; f2 = e2; f3 = e3; f4 = e4; f5 = e5; f6 = e6; f7 = e7
+            e0 = ne[0]; e1 = ne[1]; e2 = ne[2]; e3 = ne[3]; e4 = ne[4]; e5 = ne[5]; e6 = ne[6]; e7 = ne[7]
+            d0 = c0; d1 = c1; d2 = c2; d3 = c3; d4 = c4; d5 = c5; d6 = c6; d7 = c7
+            c0 = b0; c1 = b1; c2 = b2; c3 = b3; c4 = b4; c5 = b5; c6 = b6; c7 = b7
+            b0 = a0; b1 = a1; b2 = a2; b3 = a3; b4 = a4; b5 = a5; b6 = a6; b7 = a7
+            a0 = na[0]; a1 = na[1]; a2 = na[2]; a3 = na[3]; a4 = na[4]; a5 = na[5]; a6 = na[6]; a7 = na[7]
+        }
+
+        // H_new[k] = H_old[k] + working_var[k]
+        var nh0: byte[8] = this.AddWord(ha0, ha1, ha2, ha3, ha4, ha5, ha6, ha7, a0, a1, a2, a3, a4, a5, a6, a7)
+        var nh1: byte[8] = this.AddWord(hb0, hb1, hb2, hb3, hb4, hb5, hb6, hb7, b0, b1, b2, b3, b4, b5, b6, b7)
+        var nh2: byte[8] = this.AddWord(hc0, hc1, hc2, hc3, hc4, hc5, hc6, hc7, c0, c1, c2, c3, c4, c5, c6, c7)
+        var nh3: byte[8] = this.AddWord(hd0, hd1, hd2, hd3, hd4, hd5, hd6, hd7, d0, d1, d2, d3, d4, d5, d6, d7)
+        var nh4: byte[8] = this.AddWord(he0, he1, he2, he3, he4, he5, he6, he7, e0, e1, e2, e3, e4, e5, e6, e7)
+        var nh5: byte[8] = this.AddWord(hf0, hf1, hf2, hf3, hf4, hf5, hf6, hf7, f0, f1, f2, f3, f4, f5, f6, f7)
+        var nh6: byte[8] = this.AddWord(hg0, hg1, hg2, hg3, hg4, hg5, hg6, hg7, g0, g1, g2, g3, g4, g5, g6, g7)
+        var nh7: byte[8] = this.AddWord(hh0, hh1, hh2, hh3, hh4, hh5, hh6, hh7, wh0, wh1, wh2, wh3, wh4, wh5, wh6, wh7)
+
+        // Assemble into a local array then write via for loop (§5).
+        var newH: byte[64]
+        newH[0]  = nh0[0]; newH[1]  = nh0[1]; newH[2]  = nh0[2]; newH[3]  = nh0[3]
+        newH[4]  = nh0[4]; newH[5]  = nh0[5]; newH[6]  = nh0[6]; newH[7]  = nh0[7]
+        newH[8]  = nh1[0]; newH[9]  = nh1[1]; newH[10] = nh1[2]; newH[11] = nh1[3]
+        newH[12] = nh1[4]; newH[13] = nh1[5]; newH[14] = nh1[6]; newH[15] = nh1[7]
+        newH[16] = nh2[0]; newH[17] = nh2[1]; newH[18] = nh2[2]; newH[19] = nh2[3]
+        newH[20] = nh2[4]; newH[21] = nh2[5]; newH[22] = nh2[6]; newH[23] = nh2[7]
+        newH[24] = nh3[0]; newH[25] = nh3[1]; newH[26] = nh3[2]; newH[27] = nh3[3]
+        newH[28] = nh3[4]; newH[29] = nh3[5]; newH[30] = nh3[6]; newH[31] = nh3[7]
+        newH[32] = nh4[0]; newH[33] = nh4[1]; newH[34] = nh4[2]; newH[35] = nh4[3]
+        newH[36] = nh4[4]; newH[37] = nh4[5]; newH[38] = nh4[6]; newH[39] = nh4[7]
+        newH[40] = nh5[0]; newH[41] = nh5[1]; newH[42] = nh5[2]; newH[43] = nh5[3]
+        newH[44] = nh5[4]; newH[45] = nh5[5]; newH[46] = nh5[6]; newH[47] = nh5[7]
+        newH[48] = nh6[0]; newH[49] = nh6[1]; newH[50] = nh6[2]; newH[51] = nh6[3]
+        newH[52] = nh6[4]; newH[53] = nh6[5]; newH[54] = nh6[6]; newH[55] = nh6[7]
+        newH[56] = nh7[0]; newH[57] = nh7[1]; newH[58] = nh7[2]; newH[59] = nh7[3]
+        newH[60] = nh7[4]; newH[61] = nh7[5]; newH[62] = nh7[6]; newH[63] = nh7[7]
+        for (var j = 0; j < 64; j++)
+        {
+            this.h[j] = newH[j]
+        }
+    }
+
+    // GetDigest returns the current 512-bit hash value as 64 bytes (big-endian).
+    public fn GetDigest() byte[64]
+    {
+        return this.h
+    }
+
+    // -----------------------------------------------------------------------
+    // Private helpers — all pure (no this.* writes except ProcessBlock).
+    // -----------------------------------------------------------------------
+
+    // AddWord: modular 64-bit addition in big-endian byte form.
+    fn AddWord(a0: byte, a1: byte, a2: byte, a3: byte, a4: byte, a5: byte, a6: byte, a7: byte,
+               b0: byte, b1: byte, b2: byte, b3: byte, b4: byte, b5: byte, b6: byte, b7: byte) byte[8]
+    {
+        var a0i: int = a0 as int; var a1i: int = a1 as int; var a2i: int = a2 as int; var a3i: int = a3 as int
+        var a4i: int = a4 as int; var a5i: int = a5 as int; var a6i: int = a6 as int; var a7i: int = a7 as int
+        var b0i: int = b0 as int; var b1i: int = b1 as int; var b2i: int = b2 as int; var b3i: int = b3 as int
+        var b4i: int = b4 as int; var b5i: int = b5 as int; var b6i: int = b6 as int; var b7i: int = b7 as int
+
+        var sum7: int = a7i + b7i; var d7i: int = sum7 % 256; var cy7: int = sum7 / 256
+        var sum6: int = a6i + b6i + cy7; var d6i: int = sum6 % 256; var cy6: int = sum6 / 256
+        var sum5: int = a5i + b5i + cy6; var d5i: int = sum5 % 256; var cy5: int = sum5 / 256
+        var sum4: int = a4i + b4i + cy5; var d4i: int = sum4 % 256; var cy4: int = sum4 / 256
+        var sum3: int = a3i + b3i + cy4; var d3i: int = sum3 % 256; var cy3: int = sum3 / 256
+        var sum2: int = a2i + b2i + cy3; var d2i: int = sum2 % 256; var cy2: int = sum2 / 256
+        var sum1: int = a1i + b1i + cy2; var d1i: int = sum1 % 256; var cy1: int = sum1 / 256
+        var sum0: int = a0i + b0i + cy1; var d0i: int = sum0 % 256
+
+        var result: byte[8]
+        var rb0: byte = d0i as byte; var rb1: byte = d1i as byte; var rb2: byte = d2i as byte; var rb3: byte = d3i as byte
+        var rb4: byte = d4i as byte; var rb5: byte = d5i as byte; var rb6: byte = d6i as byte; var rb7: byte = d7i as byte
+        result[0] = rb0; result[1] = rb1; result[2] = rb2; result[3] = rb3
+        result[4] = rb4; result[5] = rb5; result[6] = rb6; result[7] = rb7
+        return result
+    }
+
+    // XorWord: bitwise XOR of two 64-bit words, byte by byte.
+    fn XorWord(a0: byte, a1: byte, a2: byte, a3: byte, a4: byte, a5: byte, a6: byte, a7: byte,
+               b0: byte, b1: byte, b2: byte, b3: byte, b4: byte, b5: byte, b6: byte, b7: byte) byte[8]
+    {
+        var x0: byte = a0 ^ b0; var x1: byte = a1 ^ b1
+        var x2: byte = a2 ^ b2; var x3: byte = a3 ^ b3
+        var x4: byte = a4 ^ b4; var x5: byte = a5 ^ b5
+        var x6: byte = a6 ^ b6; var x7: byte = a7 ^ b7
+        var result: byte[8]
+        result[0] = x0; result[1] = x1; result[2] = x2; result[3] = x3
+        result[4] = x4; result[5] = x5; result[6] = x6; result[7] = x7
+        return result
+    }
+
+    // AndWord: bitwise AND of two 64-bit words, byte by byte.
+    fn AndWord(a0: byte, a1: byte, a2: byte, a3: byte, a4: byte, a5: byte, a6: byte, a7: byte,
+               b0: byte, b1: byte, b2: byte, b3: byte, b4: byte, b5: byte, b6: byte, b7: byte) byte[8]
+    {
+        var x0: byte = a0 & b0; var x1: byte = a1 & b1
+        var x2: byte = a2 & b2; var x3: byte = a3 & b3
+        var x4: byte = a4 & b4; var x5: byte = a5 & b5
+        var x6: byte = a6 & b6; var x7: byte = a7 & b7
+        var result: byte[8]
+        result[0] = x0; result[1] = x1; result[2] = x2; result[3] = x3
+        result[4] = x4; result[5] = x5; result[6] = x6; result[7] = x7
+        return result
+    }
+
+    // Rotr: rotate right a 64-bit big-endian word by n bits (0 <= n <= 63).
+    fn Rotr(b0: byte, b1: byte, b2: byte, b3: byte, b4: byte, b5: byte, b6: byte, b7: byte, n: int) byte[8]
+    {
+        var q: int = n / 8
+        var r: int = n % 8
+
+        // Byte-level rotation: rotate bytes right by q positions (circular).
+        // c[k] = b[(k - q + 8) % 8]
+        var c0: byte = b0; var c1: byte = b1; var c2: byte = b2; var c3: byte = b3
+        var c4: byte = b4; var c5: byte = b5; var c6: byte = b6; var c7: byte = b7
+        if (q == 1) { c0 = b7; c1 = b0; c2 = b1; c3 = b2; c4 = b3; c5 = b4; c6 = b5; c7 = b6 }
+        if (q == 2) { c0 = b6; c1 = b7; c2 = b0; c3 = b1; c4 = b2; c5 = b3; c6 = b4; c7 = b5 }
+        if (q == 3) { c0 = b5; c1 = b6; c2 = b7; c3 = b0; c4 = b1; c5 = b2; c6 = b3; c7 = b4 }
+        if (q == 4) { c0 = b4; c1 = b5; c2 = b6; c3 = b7; c4 = b0; c5 = b1; c6 = b2; c7 = b3 }
+        if (q == 5) { c0 = b3; c1 = b4; c2 = b5; c3 = b6; c4 = b7; c5 = b0; c6 = b1; c7 = b2 }
+        if (q == 6) { c0 = b2; c1 = b3; c2 = b4; c3 = b5; c4 = b6; c5 = b7; c6 = b0; c7 = b1 }
+        if (q == 7) { c0 = b1; c1 = b2; c2 = b3; c3 = b4; c4 = b5; c5 = b6; c6 = b7; c7 = b0 }
+
+        // Bit-level rotation right by r bits within the 8 bytes.
+        var pow_r: int = 1
+        if (r >= 1) { pow_r = 2 }
+        if (r >= 2) { pow_r = 4 }
+        if (r >= 3) { pow_r = 8 }
+        if (r >= 4) { pow_r = 16 }
+        if (r >= 5) { pow_r = 32 }
+        if (r >= 6) { pow_r = 64 }
+        if (r >= 7) { pow_r = 128 }
+        var pow_8mr: int = 256 / pow_r
+
+        var c0i: int = c0 as int; var c1i: int = c1 as int; var c2i: int = c2 as int; var c3i: int = c3 as int
+        var c4i: int = c4 as int; var c5i: int = c5 as int; var c6i: int = c6 as int; var c7i: int = c7 as int
+
+        // Each byte shifts right r bits; the r low bits wrap from the previous byte.
+        // Byte 0 wraps from byte 7 (circular rotation).
+        var d0i: int = c0i / pow_r + (c7i % pow_r) * pow_8mr
+        var d1i: int = c1i / pow_r + (c0i % pow_r) * pow_8mr
+        var d2i: int = c2i / pow_r + (c1i % pow_r) * pow_8mr
+        var d3i: int = c3i / pow_r + (c2i % pow_r) * pow_8mr
+        var d4i: int = c4i / pow_r + (c3i % pow_r) * pow_8mr
+        var d5i: int = c5i / pow_r + (c4i % pow_r) * pow_8mr
+        var d6i: int = c6i / pow_r + (c5i % pow_r) * pow_8mr
+        var d7i: int = c7i / pow_r + (c6i % pow_r) * pow_8mr
+
+        var result: byte[8]
+        var rr0: byte = d0i as byte; var rr1: byte = d1i as byte; var rr2: byte = d2i as byte; var rr3: byte = d3i as byte
+        var rr4: byte = d4i as byte; var rr5: byte = d5i as byte; var rr6: byte = d6i as byte; var rr7: byte = d7i as byte
+        result[0] = rr0; result[1] = rr1; result[2] = rr2; result[3] = rr3
+        result[4] = rr4; result[5] = rr5; result[6] = rr6; result[7] = rr7
+        return result
+    }
+
+    // Shr: logical right shift of a 64-bit big-endian word by n bits (0 <= n <= 63).
+    fn Shr(b0: byte, b1: byte, b2: byte, b3: byte, b4: byte, b5: byte, b6: byte, b7: byte, n: int) byte[8]
+    {
+        var q: int = n / 8
+        var r: int = n % 8
+
+        // Byte-level shift: shift bytes right by q positions, fill MSBytes with 0.
+        var c0: byte = b0; var c1: byte = b1; var c2: byte = b2; var c3: byte = b3
+        var c4: byte = b4; var c5: byte = b5; var c6: byte = b6; var c7: byte = b7
+        if (q == 1) { c0 = 0x00; c1 = b0; c2 = b1; c3 = b2; c4 = b3; c5 = b4; c6 = b5; c7 = b6 }
+        if (q == 2) { c0 = 0x00; c1 = 0x00; c2 = b0; c3 = b1; c4 = b2; c5 = b3; c6 = b4; c7 = b5 }
+        if (q == 3) { c0 = 0x00; c1 = 0x00; c2 = 0x00; c3 = b0; c4 = b1; c5 = b2; c6 = b3; c7 = b4 }
+        if (q == 4) { c0 = 0x00; c1 = 0x00; c2 = 0x00; c3 = 0x00; c4 = b0; c5 = b1; c6 = b2; c7 = b3 }
+        if (q == 5) { c0 = 0x00; c1 = 0x00; c2 = 0x00; c3 = 0x00; c4 = 0x00; c5 = b0; c6 = b1; c7 = b2 }
+        if (q == 6) { c0 = 0x00; c1 = 0x00; c2 = 0x00; c3 = 0x00; c4 = 0x00; c5 = 0x00; c6 = b0; c7 = b1 }
+        if (q == 7) { c0 = 0x00; c1 = 0x00; c2 = 0x00; c3 = 0x00; c4 = 0x00; c5 = 0x00; c6 = 0x00; c7 = b0 }
+
+        var pow_r: int = 1
+        if (r >= 1) { pow_r = 2 }
+        if (r >= 2) { pow_r = 4 }
+        if (r >= 3) { pow_r = 8 }
+        if (r >= 4) { pow_r = 16 }
+        if (r >= 5) { pow_r = 32 }
+        if (r >= 6) { pow_r = 64 }
+        if (r >= 7) { pow_r = 128 }
+        var pow_8mr: int = 256 / pow_r
+
+        var c0i: int = c0 as int; var c1i: int = c1 as int; var c2i: int = c2 as int; var c3i: int = c3 as int
+        var c4i: int = c4 as int; var c5i: int = c5 as int; var c6i: int = c6 as int; var c7i: int = c7 as int
+
+        // Byte 0 does NOT wrap (logical shift, MSBits filled with 0).
+        var d0i: int = c0i / pow_r
+        var d1i: int = c1i / pow_r + (c0i % pow_r) * pow_8mr
+        var d2i: int = c2i / pow_r + (c1i % pow_r) * pow_8mr
+        var d3i: int = c3i / pow_r + (c2i % pow_r) * pow_8mr
+        var d4i: int = c4i / pow_r + (c3i % pow_r) * pow_8mr
+        var d5i: int = c5i / pow_r + (c4i % pow_r) * pow_8mr
+        var d6i: int = c6i / pow_r + (c5i % pow_r) * pow_8mr
+        var d7i: int = c7i / pow_r + (c6i % pow_r) * pow_8mr
+
+        var result: byte[8]
+        var rs0: byte = d0i as byte; var rs1: byte = d1i as byte; var rs2: byte = d2i as byte; var rs3: byte = d3i as byte
+        var rs4: byte = d4i as byte; var rs5: byte = d5i as byte; var rs6: byte = d6i as byte; var rs7: byte = d7i as byte
+        result[0] = rs0; result[1] = rs1; result[2] = rs2; result[3] = rs3
+        result[4] = rs4; result[5] = rs5; result[6] = rs6; result[7] = rs7
+        return result
+    }
+
+    // BigSigma0: ROTR_28 XOR ROTR_34 XOR ROTR_39  (used for working variable a).
+    fn BigSigma0(b0: byte, b1: byte, b2: byte, b3: byte, b4: byte, b5: byte, b6: byte, b7: byte) byte[8]
+    {
+        var r28: byte[8] = this.Rotr(b0, b1, b2, b3, b4, b5, b6, b7, 28)
+        var r28b0: byte = r28[0]; var r28b1: byte = r28[1]; var r28b2: byte = r28[2]; var r28b3: byte = r28[3]
+        var r28b4: byte = r28[4]; var r28b5: byte = r28[5]; var r28b6: byte = r28[6]; var r28b7: byte = r28[7]
+        var r34: byte[8] = this.Rotr(b0, b1, b2, b3, b4, b5, b6, b7, 34)
+        var r34b0: byte = r34[0]; var r34b1: byte = r34[1]; var r34b2: byte = r34[2]; var r34b3: byte = r34[3]
+        var r34b4: byte = r34[4]; var r34b5: byte = r34[5]; var r34b6: byte = r34[6]; var r34b7: byte = r34[7]
+        var r39: byte[8] = this.Rotr(b0, b1, b2, b3, b4, b5, b6, b7, 39)
+        var r39b0: byte = r39[0]; var r39b1: byte = r39[1]; var r39b2: byte = r39[2]; var r39b3: byte = r39[3]
+        var r39b4: byte = r39[4]; var r39b5: byte = r39[5]; var r39b6: byte = r39[6]; var r39b7: byte = r39[7]
+        var x1: byte[8] = this.XorWord(r28b0, r28b1, r28b2, r28b3, r28b4, r28b5, r28b6, r28b7,
+                                       r34b0, r34b1, r34b2, r34b3, r34b4, r34b5, r34b6, r34b7)
+        var x1b0: byte = x1[0]; var x1b1: byte = x1[1]; var x1b2: byte = x1[2]; var x1b3: byte = x1[3]
+        var x1b4: byte = x1[4]; var x1b5: byte = x1[5]; var x1b6: byte = x1[6]; var x1b7: byte = x1[7]
+        var result: byte[8] = this.XorWord(x1b0, x1b1, x1b2, x1b3, x1b4, x1b5, x1b6, x1b7,
+                                           r39b0, r39b1, r39b2, r39b3, r39b4, r39b5, r39b6, r39b7)
+        return result
+    }
+
+    // BigSigma1: ROTR_14 XOR ROTR_18 XOR ROTR_41  (used for working variable e).
+    fn BigSigma1(b0: byte, b1: byte, b2: byte, b3: byte, b4: byte, b5: byte, b6: byte, b7: byte) byte[8]
+    {
+        var r14: byte[8] = this.Rotr(b0, b1, b2, b3, b4, b5, b6, b7, 14)
+        var r14b0: byte = r14[0]; var r14b1: byte = r14[1]; var r14b2: byte = r14[2]; var r14b3: byte = r14[3]
+        var r14b4: byte = r14[4]; var r14b5: byte = r14[5]; var r14b6: byte = r14[6]; var r14b7: byte = r14[7]
+        var r18: byte[8] = this.Rotr(b0, b1, b2, b3, b4, b5, b6, b7, 18)
+        var r18b0: byte = r18[0]; var r18b1: byte = r18[1]; var r18b2: byte = r18[2]; var r18b3: byte = r18[3]
+        var r18b4: byte = r18[4]; var r18b5: byte = r18[5]; var r18b6: byte = r18[6]; var r18b7: byte = r18[7]
+        var r41: byte[8] = this.Rotr(b0, b1, b2, b3, b4, b5, b6, b7, 41)
+        var r41b0: byte = r41[0]; var r41b1: byte = r41[1]; var r41b2: byte = r41[2]; var r41b3: byte = r41[3]
+        var r41b4: byte = r41[4]; var r41b5: byte = r41[5]; var r41b6: byte = r41[6]; var r41b7: byte = r41[7]
+        var x1: byte[8] = this.XorWord(r14b0, r14b1, r14b2, r14b3, r14b4, r14b5, r14b6, r14b7,
+                                       r18b0, r18b1, r18b2, r18b3, r18b4, r18b5, r18b6, r18b7)
+        var x1b0: byte = x1[0]; var x1b1: byte = x1[1]; var x1b2: byte = x1[2]; var x1b3: byte = x1[3]
+        var x1b4: byte = x1[4]; var x1b5: byte = x1[5]; var x1b6: byte = x1[6]; var x1b7: byte = x1[7]
+        var result: byte[8] = this.XorWord(x1b0, x1b1, x1b2, x1b3, x1b4, x1b5, x1b6, x1b7,
+                                           r41b0, r41b1, r41b2, r41b3, r41b4, r41b5, r41b6, r41b7)
+        return result
+    }
+
+    // LilSigma0: ROTR_1 XOR ROTR_8 XOR SHR_7  (message schedule sigma0).
+    fn LilSigma0(b0: byte, b1: byte, b2: byte, b3: byte, b4: byte, b5: byte, b6: byte, b7: byte) byte[8]
+    {
+        var r1:  byte[8] = this.Rotr(b0, b1, b2, b3, b4, b5, b6, b7, 1)
+        var r1b0:  byte = r1[0];  var r1b1:  byte = r1[1];  var r1b2:  byte = r1[2];  var r1b3:  byte = r1[3]
+        var r1b4:  byte = r1[4];  var r1b5:  byte = r1[5];  var r1b6:  byte = r1[6];  var r1b7:  byte = r1[7]
+        var r8:  byte[8] = this.Rotr(b0, b1, b2, b3, b4, b5, b6, b7, 8)
+        var r8b0:  byte = r8[0];  var r8b1:  byte = r8[1];  var r8b2:  byte = r8[2];  var r8b3:  byte = r8[3]
+        var r8b4:  byte = r8[4];  var r8b5:  byte = r8[5];  var r8b6:  byte = r8[6];  var r8b7:  byte = r8[7]
+        var s7:  byte[8] = this.Shr(b0, b1, b2, b3, b4, b5, b6, b7, 7)
+        var s7b0:  byte = s7[0];  var s7b1:  byte = s7[1];  var s7b2:  byte = s7[2];  var s7b3:  byte = s7[3]
+        var s7b4:  byte = s7[4];  var s7b5:  byte = s7[5];  var s7b6:  byte = s7[6];  var s7b7:  byte = s7[7]
+        var x1: byte[8] = this.XorWord(r1b0, r1b1, r1b2, r1b3, r1b4, r1b5, r1b6, r1b7,
+                                       r8b0, r8b1, r8b2, r8b3, r8b4, r8b5, r8b6, r8b7)
+        var x1b0: byte = x1[0]; var x1b1: byte = x1[1]; var x1b2: byte = x1[2]; var x1b3: byte = x1[3]
+        var x1b4: byte = x1[4]; var x1b5: byte = x1[5]; var x1b6: byte = x1[6]; var x1b7: byte = x1[7]
+        var result: byte[8] = this.XorWord(x1b0, x1b1, x1b2, x1b3, x1b4, x1b5, x1b6, x1b7,
+                                           s7b0, s7b1, s7b2, s7b3, s7b4, s7b5, s7b6, s7b7)
+        return result
+    }
+
+    // LilSigma1: ROTR_19 XOR ROTR_61 XOR SHR_6  (message schedule sigma1).
+    fn LilSigma1(b0: byte, b1: byte, b2: byte, b3: byte, b4: byte, b5: byte, b6: byte, b7: byte) byte[8]
+    {
+        var r19: byte[8] = this.Rotr(b0, b1, b2, b3, b4, b5, b6, b7, 19)
+        var r19b0: byte = r19[0]; var r19b1: byte = r19[1]; var r19b2: byte = r19[2]; var r19b3: byte = r19[3]
+        var r19b4: byte = r19[4]; var r19b5: byte = r19[5]; var r19b6: byte = r19[6]; var r19b7: byte = r19[7]
+        var r61: byte[8] = this.Rotr(b0, b1, b2, b3, b4, b5, b6, b7, 61)
+        var r61b0: byte = r61[0]; var r61b1: byte = r61[1]; var r61b2: byte = r61[2]; var r61b3: byte = r61[3]
+        var r61b4: byte = r61[4]; var r61b5: byte = r61[5]; var r61b6: byte = r61[6]; var r61b7: byte = r61[7]
+        var s6:  byte[8] = this.Shr(b0, b1, b2, b3, b4, b5, b6, b7, 6)
+        var s6b0:  byte = s6[0];  var s6b1:  byte = s6[1];  var s6b2:  byte = s6[2];  var s6b3:  byte = s6[3]
+        var s6b4:  byte = s6[4];  var s6b5:  byte = s6[5];  var s6b6:  byte = s6[6];  var s6b7:  byte = s6[7]
+        var x1: byte[8] = this.XorWord(r19b0, r19b1, r19b2, r19b3, r19b4, r19b5, r19b6, r19b7,
+                                       r61b0, r61b1, r61b2, r61b3, r61b4, r61b5, r61b6, r61b7)
+        var x1b0: byte = x1[0]; var x1b1: byte = x1[1]; var x1b2: byte = x1[2]; var x1b3: byte = x1[3]
+        var x1b4: byte = x1[4]; var x1b5: byte = x1[5]; var x1b6: byte = x1[6]; var x1b7: byte = x1[7]
+        var result: byte[8] = this.XorWord(x1b0, x1b1, x1b2, x1b3, x1b4, x1b5, x1b6, x1b7,
+                                           s6b0, s6b1, s6b2, s6b3, s6b4, s6b5, s6b6, s6b7)
+        return result
+    }
+
+    // Ch: (e AND f) XOR ((NOT e) AND g)
+    fn Ch(e0: byte, e1: byte, e2: byte, e3: byte, e4: byte, e5: byte, e6: byte, e7: byte,
+          f0: byte, f1: byte, f2: byte, f3: byte, f4: byte, f5: byte, f6: byte, f7: byte,
+          g0: byte, g1: byte, g2: byte, g3: byte, g4: byte, g5: byte, g6: byte, g7: byte) byte[8]
+    {
+        var ef: byte[8] = this.AndWord(e0, e1, e2, e3, e4, e5, e6, e7, f0, f1, f2, f3, f4, f5, f6, f7)
+        var ef0: byte = ef[0]; var ef1: byte = ef[1]; var ef2: byte = ef[2]; var ef3: byte = ef[3]
+        var ef4: byte = ef[4]; var ef5: byte = ef[5]; var ef6: byte = ef[6]; var ef7: byte = ef[7]
+
+        // NOT(e) byte-by-byte: 255 - e
+        var e0i: int = e0 as int; var ne0i: int = 255 - e0i; var ne0: byte = ne0i as byte
+        var e1i: int = e1 as int; var ne1i: int = 255 - e1i; var ne1: byte = ne1i as byte
+        var e2i: int = e2 as int; var ne2i: int = 255 - e2i; var ne2: byte = ne2i as byte
+        var e3i: int = e3 as int; var ne3i: int = 255 - e3i; var ne3: byte = ne3i as byte
+        var e4i: int = e4 as int; var ne4i: int = 255 - e4i; var ne4: byte = ne4i as byte
+        var e5i: int = e5 as int; var ne5i: int = 255 - e5i; var ne5: byte = ne5i as byte
+        var e6i: int = e6 as int; var ne6i: int = 255 - e6i; var ne6: byte = ne6i as byte
+        var e7i: int = e7 as int; var ne7i: int = 255 - e7i; var ne7: byte = ne7i as byte
+
+        var neg: byte[8] = this.AndWord(ne0, ne1, ne2, ne3, ne4, ne5, ne6, ne7, g0, g1, g2, g3, g4, g5, g6, g7)
+        var neg0: byte = neg[0]; var neg1: byte = neg[1]; var neg2: byte = neg[2]; var neg3: byte = neg[3]
+        var neg4: byte = neg[4]; var neg5: byte = neg[5]; var neg6: byte = neg[6]; var neg7: byte = neg[7]
+
+        var result: byte[8] = this.XorWord(ef0, ef1, ef2, ef3, ef4, ef5, ef6, ef7,
+                                           neg0, neg1, neg2, neg3, neg4, neg5, neg6, neg7)
+        return result
+    }
+
+    // Maj: (a AND b) XOR (a AND c) XOR (b AND c)
+    fn Maj(a0: byte, a1: byte, a2: byte, a3: byte, a4: byte, a5: byte, a6: byte, a7: byte,
+           b0: byte, b1: byte, b2: byte, b3: byte, b4: byte, b5: byte, b6: byte, b7: byte,
+           c0: byte, c1: byte, c2: byte, c3: byte, c4: byte, c5: byte, c6: byte, c7: byte) byte[8]
+    {
+        var ab: byte[8] = this.AndWord(a0, a1, a2, a3, a4, a5, a6, a7, b0, b1, b2, b3, b4, b5, b6, b7)
+        var ab0: byte = ab[0]; var ab1: byte = ab[1]; var ab2: byte = ab[2]; var ab3: byte = ab[3]
+        var ab4: byte = ab[4]; var ab5: byte = ab[5]; var ab6: byte = ab[6]; var ab7: byte = ab[7]
+        var ac: byte[8] = this.AndWord(a0, a1, a2, a3, a4, a5, a6, a7, c0, c1, c2, c3, c4, c5, c6, c7)
+        var ac0: byte = ac[0]; var ac1: byte = ac[1]; var ac2: byte = ac[2]; var ac3: byte = ac[3]
+        var ac4: byte = ac[4]; var ac5: byte = ac[5]; var ac6: byte = ac[6]; var ac7: byte = ac[7]
+        var bc: byte[8] = this.AndWord(b0, b1, b2, b3, b4, b5, b6, b7, c0, c1, c2, c3, c4, c5, c6, c7)
+        var bc0: byte = bc[0]; var bc1: byte = bc[1]; var bc2: byte = bc[2]; var bc3: byte = bc[3]
+        var bc4: byte = bc[4]; var bc5: byte = bc[5]; var bc6: byte = bc[6]; var bc7: byte = bc[7]
+        var x1: byte[8] = this.XorWord(ab0, ab1, ab2, ab3, ab4, ab5, ab6, ab7, ac0, ac1, ac2, ac3, ac4, ac5, ac6, ac7)
+        var x1b0: byte = x1[0]; var x1b1: byte = x1[1]; var x1b2: byte = x1[2]; var x1b3: byte = x1[3]
+        var x1b4: byte = x1[4]; var x1b5: byte = x1[5]; var x1b6: byte = x1[6]; var x1b7: byte = x1[7]
+        var result: byte[8] = this.XorWord(x1b0, x1b1, x1b2, x1b3, x1b4, x1b5, x1b6, x1b7,
+                                           bc0, bc1, bc2, bc3, bc4, bc5, bc6, bc7)
+        return result
+    }
+}

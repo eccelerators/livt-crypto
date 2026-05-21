@@ -1,0 +1,58 @@
+namespace Livt.Crypto.Tests.Internal
+using Livt.Crypto.Internal
+
+
+
+@Test
+component AesSBoxInverseTest
+{
+    new() {}
+
+    // First and last entries of the 0x00–0x3F input range.
+    // SI[0x00] = 0x52, SI[0x3F] = 0x25 per NIST FIPS 197 Table 6.
+    // Reference: https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.197-upd1.pdf
+    @Test
+    fn TestSubstituteQ0Boundaries()
+    {
+        var r0: byte = AesSBoxInverse.Substitute(0x00)
+        var r1: byte = AesSBoxInverse.Substitute(0x3f)
+        assert r0 == 0x52
+        assert r1 == 0x25
+    }
+
+    // First and last entries of the 0x40–0x7F input range.
+    // SI[0x40] = 0x72, SI[0x7F] = 0x6b per NIST FIPS 197 Table 6.
+    // Reference: https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.197-upd1.pdf
+    @Test
+    fn TestSubstituteQ1Boundaries()
+    {
+        var r0: byte = AesSBoxInverse.Substitute(0x40)
+        var r1: byte = AesSBoxInverse.Substitute(0x7f)
+        assert r0 == 0x72
+        assert r1 == 0x6b
+    }
+
+    // First and last entries of the 0x80–0xBF input range.
+    // SI[0x80] = 0x3a, SI[0xBF] = 0xf4 per NIST FIPS 197 Table 6.
+    // Reference: https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.197-upd1.pdf
+    @Test
+    fn TestSubstituteQ2Boundaries()
+    {
+        var r0: byte = AesSBoxInverse.Substitute(0x80)
+        var r1: byte = AesSBoxInverse.Substitute(0xbf)
+        assert r0 == 0x3a
+        assert r1 == 0xf4
+    }
+
+    // First and last entries of the 0xC0–0xFF input range.
+    // SI[0xC0] = 0x1f, SI[0xFF] = 0x7d per NIST FIPS 197 Table 6.
+    // Reference: https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.197-upd1.pdf
+    @Test
+    fn TestSubstituteQ3Boundaries()
+    {
+        var r0: byte = AesSBoxInverse.Substitute(0xc0)
+        var r1: byte = AesSBoxInverse.Substitute(0xff)
+        assert r0 == 0x1f
+        assert r1 == 0x7d
+    }
+}

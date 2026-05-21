@@ -1,0 +1,462 @@
+namespace Livt.Crypto.Internal
+
+// Ghash — GHASH function for GCM-based authenticated encryption (NIST SP 800-38D).
+//
+// GHASH accumulates a sequence of 16-byte blocks into a 16-byte authenticator.
+// The hash key H = AES_Encrypt(0^128) is set via SetHashKey.
+// Usage:
+//   1. SetHashKey(h)         — set the AES-derived hash key H
+//   2. Reset()               — zero the accumulator Y
+//   3. For each block b:
+//        UpdateBlock(b)      — Y = GfMul128(Y XOR b, H)
+//   4. var tag = GetY()      — read the accumulator
+//
+// GF(2^128) field polynomial: x^128 + x^7 + x^2 + x + 1 (GCM spec, R = E1 00..00).
+// Bit ordering follows GCM spec: the most-significant bit of the first byte is
+// the coefficient of x^0.
+component Ghash
+{
+    H:  byte[16]
+    Y:  byte[16]
+
+    new()
+    {
+    }
+
+    // -----------------------------------------------------------------------
+    // Public API
+    // -----------------------------------------------------------------------
+
+    public fn SetHashKey(h: byte[16])
+    {
+        for (var i = 0; i < 16; i++)
+        {
+            this.H[i] = h[i]
+        }
+    }
+
+    public fn Reset()
+    {
+        for (var i = 0; i < 16; i++)
+        {
+            this.Y[i] = 0x00
+        }
+    }
+
+    // UpdateBlock: Y = GfMul128(Y XOR block, H)
+    public fn UpdateBlock(block: byte[16])
+    {
+        // XOR accumulator with block.
+        var xb0:  byte = this.Y[0] ^ block[0]
+        var xb1:  byte = this.Y[1] ^ block[1]
+        var xb2:  byte = this.Y[2] ^ block[2]
+        var xb3:  byte = this.Y[3] ^ block[3]
+        var xb4:  byte = this.Y[4] ^ block[4]
+        var xb5:  byte = this.Y[5] ^ block[5]
+        var xb6:  byte = this.Y[6] ^ block[6]
+        var xb7:  byte = this.Y[7] ^ block[7]
+        var xb8:  byte = this.Y[8] ^ block[8]
+        var xb9:  byte = this.Y[9] ^ block[9]
+        var xb10: byte = this.Y[10] ^ block[10]
+        var xb11: byte = this.Y[11] ^ block[11]
+        var xb12: byte = this.Y[12] ^ block[12]
+        var xb13: byte = this.Y[13] ^ block[13]
+        var xb14: byte = this.Y[14] ^ block[14]
+        var xb15: byte = this.Y[15] ^ block[15]
+
+        // GF(2^128) multiply (xb, H) into result R.
+        var result: byte[16] = this.GfMul128(xb0, xb1, xb2, xb3, xb4, xb5, xb6, xb7,
+                                             xb8, xb9, xb10, xb11, xb12, xb13, xb14, xb15)
+
+        for (var i = 0; i < 16; i++)
+        {
+            this.Y[i] = result[i]
+        }
+    }
+
+    public fn GetY() byte[16]
+    {
+        return this.Y
+    }
+
+    // -----------------------------------------------------------------------
+    // GF(2^128) carry-less multiplication.
+    // Inputs X (16 bytes, passed as individual args to avoid expression
+    // boundary issues) and H (from this.H).
+    // Algorithm: right-to-left Russian-peasant over the 128 bits of X,
+    // processing bit i of X (MSB-first per GCM spec: bit 0 is MSB of byte 0).
+    //
+    // Z = 0 (accumulator), V = H.
+    // For each bit i of X (i = 0..127):
+    //   if bit i of X == 1: Z = Z XOR V
+    //   if LSB of V == 1:   V = (V >> 1) XOR R   where R[0]=0xe1, R[1..15]=0
+    //   else:               V = V >> 1
+    // Return Z.
+    // -----------------------------------------------------------------------
+
+    fn GfMul128(x0: byte, x1: byte, x2: byte, x3: byte,
+                x4: byte, x5: byte, x6: byte, x7: byte,
+                x8: byte, x9: byte, x10: byte, x11: byte,
+                x12: byte, x13: byte, x14: byte, x15: byte) byte[16]
+    {
+        // Accumulator Z (128 bits).
+        var z0:  int = 0
+        var z1:  int = 0
+        var z2:  int = 0
+        var z3:  int = 0
+        var z4:  int = 0
+        var z5:  int = 0
+        var z6:  int = 0
+        var z7:  int = 0
+        var z8:  int = 0
+        var z9:  int = 0
+        var z10: int = 0
+        var z11: int = 0
+        var z12: int = 0
+        var z13: int = 0
+        var z14: int = 0
+        var z15: int = 0
+
+        // V = H (working copy of H).
+        var v0:  int = this.H[0]  as int
+        var v1:  int = this.H[1]  as int
+        var v2:  int = this.H[2]  as int
+        var v3:  int = this.H[3]  as int
+        var v4:  int = this.H[4]  as int
+        var v5:  int = this.H[5]  as int
+        var v6:  int = this.H[6]  as int
+        var v7:  int = this.H[7]  as int
+        var v8:  int = this.H[8]  as int
+        var v9:  int = this.H[9]  as int
+        var v10: int = this.H[10] as int
+        var v11: int = this.H[11] as int
+        var v12: int = this.H[12] as int
+        var v13: int = this.H[13] as int
+        var v14: int = this.H[14] as int
+        var v15: int = this.H[15] as int
+
+        // Build a flat 128-element int array from the 16 X bytes (each bit as 0/1).
+        // xBits[0] = MSB of x0, xBits[127] = LSB of x15.
+        var xBits: int[128]
+        var xInt0:  int = x0  as int
+        var xInt1:  int = x1  as int
+        var xInt2:  int = x2  as int
+        var xInt3:  int = x3  as int
+        var xInt4:  int = x4  as int
+        var xInt5:  int = x5  as int
+        var xInt6:  int = x6  as int
+        var xInt7:  int = x7  as int
+        var xInt8:  int = x8  as int
+        var xInt9:  int = x9  as int
+        var xInt10: int = x10 as int
+        var xInt11: int = x11 as int
+        var xInt12: int = x12 as int
+        var xInt13: int = x13 as int
+        var xInt14: int = x14 as int
+        var xInt15: int = x15 as int
+
+        xBits[0]   = (xInt0  / 128) % 2
+        xBits[1]   = (xInt0  / 64)  % 2
+        xBits[2]   = (xInt0  / 32)  % 2
+        xBits[3]   = (xInt0  / 16)  % 2
+        xBits[4]   = (xInt0  / 8)   % 2
+        xBits[5]   = (xInt0  / 4)   % 2
+        xBits[6]   = (xInt0  / 2)   % 2
+        xBits[7]   =  xInt0         % 2
+        xBits[8]   = (xInt1  / 128) % 2
+        xBits[9]   = (xInt1  / 64)  % 2
+        xBits[10]  = (xInt1  / 32)  % 2
+        xBits[11]  = (xInt1  / 16)  % 2
+        xBits[12]  = (xInt1  / 8)   % 2
+        xBits[13]  = (xInt1  / 4)   % 2
+        xBits[14]  = (xInt1  / 2)   % 2
+        xBits[15]  =  xInt1         % 2
+        xBits[16]  = (xInt2  / 128) % 2
+        xBits[17]  = (xInt2  / 64)  % 2
+        xBits[18]  = (xInt2  / 32)  % 2
+        xBits[19]  = (xInt2  / 16)  % 2
+        xBits[20]  = (xInt2  / 8)   % 2
+        xBits[21]  = (xInt2  / 4)   % 2
+        xBits[22]  = (xInt2  / 2)   % 2
+        xBits[23]  =  xInt2         % 2
+        xBits[24]  = (xInt3  / 128) % 2
+        xBits[25]  = (xInt3  / 64)  % 2
+        xBits[26]  = (xInt3  / 32)  % 2
+        xBits[27]  = (xInt3  / 16)  % 2
+        xBits[28]  = (xInt3  / 8)   % 2
+        xBits[29]  = (xInt3  / 4)   % 2
+        xBits[30]  = (xInt3  / 2)   % 2
+        xBits[31]  =  xInt3         % 2
+        xBits[32]  = (xInt4  / 128) % 2
+        xBits[33]  = (xInt4  / 64)  % 2
+        xBits[34]  = (xInt4  / 32)  % 2
+        xBits[35]  = (xInt4  / 16)  % 2
+        xBits[36]  = (xInt4  / 8)   % 2
+        xBits[37]  = (xInt4  / 4)   % 2
+        xBits[38]  = (xInt4  / 2)   % 2
+        xBits[39]  =  xInt4         % 2
+        xBits[40]  = (xInt5  / 128) % 2
+        xBits[41]  = (xInt5  / 64)  % 2
+        xBits[42]  = (xInt5  / 32)  % 2
+        xBits[43]  = (xInt5  / 16)  % 2
+        xBits[44]  = (xInt5  / 8)   % 2
+        xBits[45]  = (xInt5  / 4)   % 2
+        xBits[46]  = (xInt5  / 2)   % 2
+        xBits[47]  =  xInt5         % 2
+        xBits[48]  = (xInt6  / 128) % 2
+        xBits[49]  = (xInt6  / 64)  % 2
+        xBits[50]  = (xInt6  / 32)  % 2
+        xBits[51]  = (xInt6  / 16)  % 2
+        xBits[52]  = (xInt6  / 8)   % 2
+        xBits[53]  = (xInt6  / 4)   % 2
+        xBits[54]  = (xInt6  / 2)   % 2
+        xBits[55]  =  xInt6         % 2
+        xBits[56]  = (xInt7  / 128) % 2
+        xBits[57]  = (xInt7  / 64)  % 2
+        xBits[58]  = (xInt7  / 32)  % 2
+        xBits[59]  = (xInt7  / 16)  % 2
+        xBits[60]  = (xInt7  / 8)   % 2
+        xBits[61]  = (xInt7  / 4)   % 2
+        xBits[62]  = (xInt7  / 2)   % 2
+        xBits[63]  =  xInt7         % 2
+        xBits[64]  = (xInt8  / 128) % 2
+        xBits[65]  = (xInt8  / 64)  % 2
+        xBits[66]  = (xInt8  / 32)  % 2
+        xBits[67]  = (xInt8  / 16)  % 2
+        xBits[68]  = (xInt8  / 8)   % 2
+        xBits[69]  = (xInt8  / 4)   % 2
+        xBits[70]  = (xInt8  / 2)   % 2
+        xBits[71]  =  xInt8         % 2
+        xBits[72]  = (xInt9  / 128) % 2
+        xBits[73]  = (xInt9  / 64)  % 2
+        xBits[74]  = (xInt9  / 32)  % 2
+        xBits[75]  = (xInt9  / 16)  % 2
+        xBits[76]  = (xInt9  / 8)   % 2
+        xBits[77]  = (xInt9  / 4)   % 2
+        xBits[78]  = (xInt9  / 2)   % 2
+        xBits[79]  =  xInt9         % 2
+        xBits[80]  = (xInt10 / 128) % 2
+        xBits[81]  = (xInt10 / 64)  % 2
+        xBits[82]  = (xInt10 / 32)  % 2
+        xBits[83]  = (xInt10 / 16)  % 2
+        xBits[84]  = (xInt10 / 8)   % 2
+        xBits[85]  = (xInt10 / 4)   % 2
+        xBits[86]  = (xInt10 / 2)   % 2
+        xBits[87]  =  xInt10        % 2
+        xBits[88]  = (xInt11 / 128) % 2
+        xBits[89]  = (xInt11 / 64)  % 2
+        xBits[90]  = (xInt11 / 32)  % 2
+        xBits[91]  = (xInt11 / 16)  % 2
+        xBits[92]  = (xInt11 / 8)   % 2
+        xBits[93]  = (xInt11 / 4)   % 2
+        xBits[94]  = (xInt11 / 2)   % 2
+        xBits[95]  =  xInt11        % 2
+        xBits[96]  = (xInt12 / 128) % 2
+        xBits[97]  = (xInt12 / 64)  % 2
+        xBits[98]  = (xInt12 / 32)  % 2
+        xBits[99]  = (xInt12 / 16)  % 2
+        xBits[100] = (xInt12 / 8)   % 2
+        xBits[101] = (xInt12 / 4)   % 2
+        xBits[102] = (xInt12 / 2)   % 2
+        xBits[103] =  xInt12        % 2
+        xBits[104] = (xInt13 / 128) % 2
+        xBits[105] = (xInt13 / 64)  % 2
+        xBits[106] = (xInt13 / 32)  % 2
+        xBits[107] = (xInt13 / 16)  % 2
+        xBits[108] = (xInt13 / 8)   % 2
+        xBits[109] = (xInt13 / 4)   % 2
+        xBits[110] = (xInt13 / 2)   % 2
+        xBits[111] =  xInt13        % 2
+        xBits[112] = (xInt14 / 128) % 2
+        xBits[113] = (xInt14 / 64)  % 2
+        xBits[114] = (xInt14 / 32)  % 2
+        xBits[115] = (xInt14 / 16)  % 2
+        xBits[116] = (xInt14 / 8)   % 2
+        xBits[117] = (xInt14 / 4)   % 2
+        xBits[118] = (xInt14 / 2)   % 2
+        xBits[119] =  xInt14        % 2
+        xBits[120] = (xInt15 / 128) % 2
+        xBits[121] = (xInt15 / 64)  % 2
+        xBits[122] = (xInt15 / 32)  % 2
+        xBits[123] = (xInt15 / 16)  % 2
+        xBits[124] = (xInt15 / 8)   % 2
+        xBits[125] = (xInt15 / 4)   % 2
+        xBits[126] = (xInt15 / 2)   % 2
+        xBits[127] =  xInt15        % 2
+
+        // Main loop: 128 iterations, one per bit of X.
+        for (var i = 0; i < 128; i++)
+        {
+            // If X bit i is 1: Z = Z XOR V.
+            var xBit: int = xBits[i]
+            if (xBit == 1)
+            {
+                var zv0:  byte = z0  as byte
+                var zv1:  byte = z1  as byte
+                var zv2:  byte = z2  as byte
+                var zv3:  byte = z3  as byte
+                var zv4:  byte = z4  as byte
+                var zv5:  byte = z5  as byte
+                var zv6:  byte = z6  as byte
+                var zv7:  byte = z7  as byte
+                var zv8:  byte = z8  as byte
+                var zv9:  byte = z9  as byte
+                var zv10: byte = z10 as byte
+                var zv11: byte = z11 as byte
+                var zv12: byte = z12 as byte
+                var zv13: byte = z13 as byte
+                var zv14: byte = z14 as byte
+                var zv15: byte = z15 as byte
+                var vv0:  byte = v0  as byte
+                var vv1:  byte = v1  as byte
+                var vv2:  byte = v2  as byte
+                var vv3:  byte = v3  as byte
+                var vv4:  byte = v4  as byte
+                var vv5:  byte = v5  as byte
+                var vv6:  byte = v6  as byte
+                var vv7:  byte = v7  as byte
+                var vv8:  byte = v8  as byte
+                var vv9:  byte = v9  as byte
+                var vv10: byte = v10 as byte
+                var vv11: byte = v11 as byte
+                var vv12: byte = v12 as byte
+                var vv13: byte = v13 as byte
+                var vv14: byte = v14 as byte
+                var vv15: byte = v15 as byte
+                var xr0:  byte = zv0 ^ vv0
+                var xr1:  byte = zv1 ^ vv1
+                var xr2:  byte = zv2 ^ vv2
+                var xr3:  byte = zv3 ^ vv3
+                var xr4:  byte = zv4 ^ vv4
+                var xr5:  byte = zv5 ^ vv5
+                var xr6:  byte = zv6 ^ vv6
+                var xr7:  byte = zv7 ^ vv7
+                var xr8:  byte = zv8 ^ vv8
+                var xr9:  byte = zv9 ^ vv9
+                var xr10: byte = zv10 ^ vv10
+                var xr11: byte = zv11 ^ vv11
+                var xr12: byte = zv12 ^ vv12
+                var xr13: byte = zv13 ^ vv13
+                var xr14: byte = zv14 ^ vv14
+                var xr15: byte = zv15 ^ vv15
+                var nz0:  int = xr0  as int
+                var nz1:  int = xr1  as int
+                var nz2:  int = xr2  as int
+                var nz3:  int = xr3  as int
+                var nz4:  int = xr4  as int
+                var nz5:  int = xr5  as int
+                var nz6:  int = xr6  as int
+                var nz7:  int = xr7  as int
+                var nz8:  int = xr8  as int
+                var nz9:  int = xr9  as int
+                var nz10: int = xr10 as int
+                var nz11: int = xr11 as int
+                var nz12: int = xr12 as int
+                var nz13: int = xr13 as int
+                var nz14: int = xr14 as int
+                var nz15: int = xr15 as int
+                z0  = nz0
+                z1  = nz1
+                z2  = nz2
+                z3  = nz3
+                z4  = nz4
+                z5  = nz5
+                z6  = nz6
+                z7  = nz7
+                z8  = nz8
+                z9  = nz9
+                z10 = nz10
+                z11 = nz11
+                z12 = nz12
+                z13 = nz13
+                z14 = nz14
+                z15 = nz15
+            }
+
+            // Right-shift V by 1 (GCM: MSB is x^0, shift-right moves toward x^127).
+            // New bit 0 (MSB of byte 0) = 0 (shift in a zero).
+            // If old bit 127 (LSB of byte 15) was 1: XOR with R=E1 00..00.
+            var lsb: int = v15 % 2
+
+            var sv0:  int = v0  / 2 + (0)   * 128
+            var sv1:  int = v1  / 2 + (v0  % 2) * 128
+            var sv2:  int = v2  / 2 + (v1  % 2) * 128
+            var sv3:  int = v3  / 2 + (v2  % 2) * 128
+            var sv4:  int = v4  / 2 + (v3  % 2) * 128
+            var sv5:  int = v5  / 2 + (v4  % 2) * 128
+            var sv6:  int = v6  / 2 + (v5  % 2) * 128
+            var sv7:  int = v7  / 2 + (v6  % 2) * 128
+            var sv8:  int = v8  / 2 + (v7  % 2) * 128
+            var sv9:  int = v9  / 2 + (v8  % 2) * 128
+            var sv10: int = v10 / 2 + (v9  % 2) * 128
+            var sv11: int = v11 / 2 + (v10 % 2) * 128
+            var sv12: int = v12 / 2 + (v11 % 2) * 128
+            var sv13: int = v13 / 2 + (v12 % 2) * 128
+            var sv14: int = v14 / 2 + (v13 % 2) * 128
+            var sv15: int = v15 / 2 + (v14 % 2) * 128
+
+            // If lsb == 1: XOR with R = E1 00..00 (byte 0 = 0xe1, rest = 0x00).
+            if (lsb == 1)
+            {
+                var sv0b:  byte = sv0  as byte
+                var r0b:   byte = 0xe1
+                var xv0b:  byte = sv0b ^ r0b
+                var xv0i:  int = xv0b as int
+                sv0 = xv0i
+            }
+
+            v0  = sv0
+            v1  = sv1
+            v2  = sv2
+            v3  = sv3
+            v4  = sv4
+            v5  = sv5
+            v6  = sv6
+            v7  = sv7
+            v8  = sv8
+            v9  = sv9
+            v10 = sv10
+            v11 = sv11
+            v12 = sv12
+            v13 = sv13
+            v14 = sv14
+            v15 = sv15
+        }
+
+        // Assemble result.
+        var res: byte[16]
+        var rz0:  byte = z0  as byte
+        var rz1:  byte = z1  as byte
+        var rz2:  byte = z2  as byte
+        var rz3:  byte = z3  as byte
+        var rz4:  byte = z4  as byte
+        var rz5:  byte = z5  as byte
+        var rz6:  byte = z6  as byte
+        var rz7:  byte = z7  as byte
+        var rz8:  byte = z8  as byte
+        var rz9:  byte = z9  as byte
+        var rz10: byte = z10 as byte
+        var rz11: byte = z11 as byte
+        var rz12: byte = z12 as byte
+        var rz13: byte = z13 as byte
+        var rz14: byte = z14 as byte
+        var rz15: byte = z15 as byte
+        res[0]  = rz0
+        res[1]  = rz1
+        res[2]  = rz2
+        res[3]  = rz3
+        res[4]  = rz4
+        res[5]  = rz5
+        res[6]  = rz6
+        res[7]  = rz7
+        res[8]  = rz8
+        res[9]  = rz9
+        res[10] = rz10
+        res[11] = rz11
+        res[12] = rz12
+        res[13] = rz13
+        res[14] = rz14
+        res[15] = rz15
+        return res
+    }
+}

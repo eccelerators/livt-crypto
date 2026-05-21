@@ -1,0 +1,571 @@
+namespace Livt.Crypto.Aes
+
+// AES-256 CMAC (Cipher-based MAC) — NIST SP 800-38B.
+//
+// Usage (per message):
+//   1. SetKey(key)
+//   2. Reset()
+//   3. For each non-final complete block: UpdateBlock(block)
+//   4a. FinalizeBlock(block)        — final complete block (uses K1)
+//   4b. FinalizePaddedBlock(block)  — final padded block   (uses K2)
+//       Caller pads: data[0..n-1] || 0x80 || 0x00..0x00
+//   5. GetTag()
+//
+// For a zero-length message: Reset() then FinalizePaddedBlock(0x80 00..00).
+component Cmac256
+{
+    public const KEY_SIZE:   int = 32
+    public const BLOCK_SIZE: int = 16
+    public const TAG_SIZE:   int = 16
+
+    enc: EncryptBlock256
+    k1:  byte[16]
+    k2:  byte[16]
+    X:   byte[16]
+    tag: byte[16]
+
+    new()
+    {
+        this.enc = new EncryptBlock256()
+    }
+
+    // -----------------------------------------------------------------------
+    // Public API
+    // -----------------------------------------------------------------------
+
+    public fn SetKey(key: byte[32])
+    {
+        this.enc.SetKey(key)
+
+        // L = AES_K(0^128).
+        var zeroBlock: byte[16] = [
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+        this.enc.LoadBlock(zeroBlock)
+        this.enc.EncryptBlock()
+        var L: byte[16] = this.enc.GetBlock()
+
+        // Read L bytes as ints for DeriveSubkey (§10 two-step cast).
+        var l0b:  byte = L[0]
+        var l0:   int  = l0b  as int
+        var l1b:  byte = L[1]
+        var l1:   int  = l1b  as int
+        var l2b:  byte = L[2]
+        var l2:   int  = l2b  as int
+        var l3b:  byte = L[3]
+        var l3:   int  = l3b  as int
+        var l4b:  byte = L[4]
+        var l4:   int  = l4b  as int
+        var l5b:  byte = L[5]
+        var l5:   int  = l5b  as int
+        var l6b:  byte = L[6]
+        var l6:   int  = l6b  as int
+        var l7b:  byte = L[7]
+        var l7:   int  = l7b  as int
+        var l8b:  byte = L[8]
+        var l8:   int  = l8b  as int
+        var l9b:  byte = L[9]
+        var l9:   int  = l9b  as int
+        var l10b: byte = L[10]
+        var l10:  int  = l10b as int
+        var l11b: byte = L[11]
+        var l11:  int  = l11b as int
+        var l12b: byte = L[12]
+        var l12:  int  = l12b as int
+        var l13b: byte = L[13]
+        var l13:  int  = l13b as int
+        var l14b: byte = L[14]
+        var l14:  int  = l14b as int
+        var l15b: byte = L[15]
+        var l15:  int  = l15b as int
+
+        // K1 = DeriveSubkey(L).
+        var k1Result: byte[16] = this.DeriveSubkey(l0, l1, l2, l3, l4, l5, l6, l7,
+                                                    l8, l9, l10, l11, l12, l13, l14, l15)
+
+        // Read K1 bytes as ints for DeriveSubkey(K1) (§10 two-step cast).
+        var k1_0b:  byte = k1Result[0]
+        var k1_0:   int  = k1_0b  as int
+        var k1_1b:  byte = k1Result[1]
+        var k1_1:   int  = k1_1b  as int
+        var k1_2b:  byte = k1Result[2]
+        var k1_2:   int  = k1_2b  as int
+        var k1_3b:  byte = k1Result[3]
+        var k1_3:   int  = k1_3b  as int
+        var k1_4b:  byte = k1Result[4]
+        var k1_4:   int  = k1_4b  as int
+        var k1_5b:  byte = k1Result[5]
+        var k1_5:   int  = k1_5b  as int
+        var k1_6b:  byte = k1Result[6]
+        var k1_6:   int  = k1_6b  as int
+        var k1_7b:  byte = k1Result[7]
+        var k1_7:   int  = k1_7b  as int
+        var k1_8b:  byte = k1Result[8]
+        var k1_8:   int  = k1_8b  as int
+        var k1_9b:  byte = k1Result[9]
+        var k1_9:   int  = k1_9b  as int
+        var k1_10b: byte = k1Result[10]
+        var k1_10:  int  = k1_10b as int
+        var k1_11b: byte = k1Result[11]
+        var k1_11:  int  = k1_11b as int
+        var k1_12b: byte = k1Result[12]
+        var k1_12:  int  = k1_12b as int
+        var k1_13b: byte = k1Result[13]
+        var k1_13:  int  = k1_13b as int
+        var k1_14b: byte = k1Result[14]
+        var k1_14:  int  = k1_14b as int
+        var k1_15b: byte = k1Result[15]
+        var k1_15:  int  = k1_15b as int
+
+        // K2 = DeriveSubkey(K1).
+        var k2Result: byte[16] = this.DeriveSubkey(k1_0, k1_1, k1_2, k1_3, k1_4, k1_5, k1_6, k1_7,
+                                                    k1_8, k1_9, k1_10, k1_11, k1_12, k1_13, k1_14, k1_15)
+
+        // Store K1.
+        for (var i = 0; i < 16; i++)
+        {
+            this.k1[i] = k1Result[i]
+        }
+
+        // Store K2.
+        for (var j = 0; j < 16; j++)
+        {
+            this.k2[j] = k2Result[j]
+        }
+    }
+
+    // Reset the running state X to 0^128 before processing a new message.
+    public fn Reset()
+    {
+        for (var i = 0; i < 16; i++)
+        {
+            this.X[i] = 0x00
+        }
+    }
+
+    // Feed a non-final complete 16-byte block: X = AES_K(X XOR block).
+    public fn UpdateBlock(block: byte[16])
+    {
+        var x0:  byte = this.X[0]
+        var x1:  byte = this.X[1]
+        var x2:  byte = this.X[2]
+        var x3:  byte = this.X[3]
+        var x4:  byte = this.X[4]
+        var x5:  byte = this.X[5]
+        var x6:  byte = this.X[6]
+        var x7:  byte = this.X[7]
+        var x8:  byte = this.X[8]
+        var x9:  byte = this.X[9]
+        var x10: byte = this.X[10]
+        var x11: byte = this.X[11]
+        var x12: byte = this.X[12]
+        var x13: byte = this.X[13]
+        var x14: byte = this.X[14]
+        var x15: byte = this.X[15]
+
+        // Read block into locals.
+        var b0:  byte = block[0]
+        var b1:  byte = block[1]
+        var b2:  byte = block[2]
+        var b3:  byte = block[3]
+        var b4:  byte = block[4]
+        var b5:  byte = block[5]
+        var b6:  byte = block[6]
+        var b7:  byte = block[7]
+        var b8:  byte = block[8]
+        var b9:  byte = block[9]
+        var b10: byte = block[10]
+        var b11: byte = block[11]
+        var b12: byte = block[12]
+        var b13: byte = block[13]
+        var b14: byte = block[14]
+        var b15: byte = block[15]
+
+        // XOR X with block.
+        var xb0:  byte = x0 ^ b0
+        var xb1:  byte = x1 ^ b1
+        var xb2:  byte = x2 ^ b2
+        var xb3:  byte = x3 ^ b3
+        var xb4:  byte = x4 ^ b4
+        var xb5:  byte = x5 ^ b5
+        var xb6:  byte = x6 ^ b6
+        var xb7:  byte = x7 ^ b7
+        var xb8:  byte = x8 ^ b8
+        var xb9:  byte = x9 ^ b9
+        var xb10: byte = x10 ^ b10
+        var xb11: byte = x11 ^ b11
+        var xb12: byte = x12 ^ b12
+        var xb13: byte = x13 ^ b13
+        var xb14: byte = x14 ^ b14
+        var xb15: byte = x15 ^ b15
+
+        var xorBlock: byte[16]
+        xorBlock[0]  = xb0
+        xorBlock[1]  = xb1
+        xorBlock[2]  = xb2
+        xorBlock[3]  = xb3
+        xorBlock[4]  = xb4
+        xorBlock[5]  = xb5
+        xorBlock[6]  = xb6
+        xorBlock[7]  = xb7
+        xorBlock[8]  = xb8
+        xorBlock[9]  = xb9
+        xorBlock[10] = xb10
+        xorBlock[11] = xb11
+        xorBlock[12] = xb12
+        xorBlock[13] = xb13
+        xorBlock[14] = xb14
+        xorBlock[15] = xb15
+
+        // Encrypt and store result back to X.
+        this.enc.LoadBlock(xorBlock)
+        this.enc.EncryptBlock()
+        var result: byte[16] = this.enc.GetBlock()
+
+        for (var i = 0; i < 16; i++)
+        {
+            this.X[i] = result[i]
+        }
+    }
+
+    // Finalize a complete 16-byte final block: tag = AES_K(X XOR block XOR K1).
+    public fn FinalizeBlock(block: byte[16])
+    {
+        var x0:  byte = this.X[0]
+        var x1:  byte = this.X[1]
+        var x2:  byte = this.X[2]
+        var x3:  byte = this.X[3]
+        var x4:  byte = this.X[4]
+        var x5:  byte = this.X[5]
+        var x6:  byte = this.X[6]
+        var x7:  byte = this.X[7]
+        var x8:  byte = this.X[8]
+        var x9:  byte = this.X[9]
+        var x10: byte = this.X[10]
+        var x11: byte = this.X[11]
+        var x12: byte = this.X[12]
+        var x13: byte = this.X[13]
+        var x14: byte = this.X[14]
+        var x15: byte = this.X[15]
+
+        var k1_0:  byte = this.k1[0]
+        var k1_1:  byte = this.k1[1]
+        var k1_2:  byte = this.k1[2]
+        var k1_3:  byte = this.k1[3]
+        var k1_4:  byte = this.k1[4]
+        var k1_5:  byte = this.k1[5]
+        var k1_6:  byte = this.k1[6]
+        var k1_7:  byte = this.k1[7]
+        var k1_8:  byte = this.k1[8]
+        var k1_9:  byte = this.k1[9]
+        var k1_10: byte = this.k1[10]
+        var k1_11: byte = this.k1[11]
+        var k1_12: byte = this.k1[12]
+        var k1_13: byte = this.k1[13]
+        var k1_14: byte = this.k1[14]
+        var k1_15: byte = this.k1[15]
+
+        // Read block into locals.
+        var b0:  byte = block[0]
+        var b1:  byte = block[1]
+        var b2:  byte = block[2]
+        var b3:  byte = block[3]
+        var b4:  byte = block[4]
+        var b5:  byte = block[5]
+        var b6:  byte = block[6]
+        var b7:  byte = block[7]
+        var b8:  byte = block[8]
+        var b9:  byte = block[9]
+        var b10: byte = block[10]
+        var b11: byte = block[11]
+        var b12: byte = block[12]
+        var b13: byte = block[13]
+        var b14: byte = block[14]
+        var b15: byte = block[15]
+
+        // Compute X XOR block.
+        var xb0:  byte = x0 ^ b0
+        var xb1:  byte = x1 ^ b1
+        var xb2:  byte = x2 ^ b2
+        var xb3:  byte = x3 ^ b3
+        var xb4:  byte = x4 ^ b4
+        var xb5:  byte = x5 ^ b5
+        var xb6:  byte = x6 ^ b6
+        var xb7:  byte = x7 ^ b7
+        var xb8:  byte = x8 ^ b8
+        var xb9:  byte = x9 ^ b9
+        var xb10: byte = x10 ^ b10
+        var xb11: byte = x11 ^ b11
+        var xb12: byte = x12 ^ b12
+        var xb13: byte = x13 ^ b13
+        var xb14: byte = x14 ^ b14
+        var xb15: byte = x15 ^ b15
+
+        // Compute (X XOR block) XOR K1.
+        var y0:  byte = xb0 ^ k1_0
+        var y1:  byte = xb1 ^ k1_1
+        var y2:  byte = xb2 ^ k1_2
+        var y3:  byte = xb3 ^ k1_3
+        var y4:  byte = xb4 ^ k1_4
+        var y5:  byte = xb5 ^ k1_5
+        var y6:  byte = xb6 ^ k1_6
+        var y7:  byte = xb7 ^ k1_7
+        var y8:  byte = xb8 ^ k1_8
+        var y9:  byte = xb9 ^ k1_9
+        var y10: byte = xb10 ^ k1_10
+        var y11: byte = xb11 ^ k1_11
+        var y12: byte = xb12 ^ k1_12
+        var y13: byte = xb13 ^ k1_13
+        var y14: byte = xb14 ^ k1_14
+        var y15: byte = xb15 ^ k1_15
+
+        var inputBlock: byte[16]
+        inputBlock[0]  = y0
+        inputBlock[1]  = y1
+        inputBlock[2]  = y2
+        inputBlock[3]  = y3
+        inputBlock[4]  = y4
+        inputBlock[5]  = y5
+        inputBlock[6]  = y6
+        inputBlock[7]  = y7
+        inputBlock[8]  = y8
+        inputBlock[9]  = y9
+        inputBlock[10] = y10
+        inputBlock[11] = y11
+        inputBlock[12] = y12
+        inputBlock[13] = y13
+        inputBlock[14] = y14
+        inputBlock[15] = y15
+
+        // Encrypt to produce tag.
+        this.enc.LoadBlock(inputBlock)
+        this.enc.EncryptBlock()
+        var result: byte[16] = this.enc.GetBlock()
+
+        for (var i = 0; i < 16; i++)
+        {
+            this.tag[i] = result[i]
+        }
+    }
+
+    // Finalize a padded final block: tag = AES_K(X XOR block XOR K2).
+    // Caller must have already applied the 0x80 || 0x00... padding.
+    public fn FinalizePaddedBlock(block: byte[16])
+    {
+        var x0:  byte = this.X[0]
+        var x1:  byte = this.X[1]
+        var x2:  byte = this.X[2]
+        var x3:  byte = this.X[3]
+        var x4:  byte = this.X[4]
+        var x5:  byte = this.X[5]
+        var x6:  byte = this.X[6]
+        var x7:  byte = this.X[7]
+        var x8:  byte = this.X[8]
+        var x9:  byte = this.X[9]
+        var x10: byte = this.X[10]
+        var x11: byte = this.X[11]
+        var x12: byte = this.X[12]
+        var x13: byte = this.X[13]
+        var x14: byte = this.X[14]
+        var x15: byte = this.X[15]
+
+        var k2_0:  byte = this.k2[0]
+        var k2_1:  byte = this.k2[1]
+        var k2_2:  byte = this.k2[2]
+        var k2_3:  byte = this.k2[3]
+        var k2_4:  byte = this.k2[4]
+        var k2_5:  byte = this.k2[5]
+        var k2_6:  byte = this.k2[6]
+        var k2_7:  byte = this.k2[7]
+        var k2_8:  byte = this.k2[8]
+        var k2_9:  byte = this.k2[9]
+        var k2_10: byte = this.k2[10]
+        var k2_11: byte = this.k2[11]
+        var k2_12: byte = this.k2[12]
+        var k2_13: byte = this.k2[13]
+        var k2_14: byte = this.k2[14]
+        var k2_15: byte = this.k2[15]
+
+        // Read block into locals.
+        var b0:  byte = block[0]
+        var b1:  byte = block[1]
+        var b2:  byte = block[2]
+        var b3:  byte = block[3]
+        var b4:  byte = block[4]
+        var b5:  byte = block[5]
+        var b6:  byte = block[6]
+        var b7:  byte = block[7]
+        var b8:  byte = block[8]
+        var b9:  byte = block[9]
+        var b10: byte = block[10]
+        var b11: byte = block[11]
+        var b12: byte = block[12]
+        var b13: byte = block[13]
+        var b14: byte = block[14]
+        var b15: byte = block[15]
+
+        // Compute X XOR block.
+        var xb0:  byte = x0 ^ b0
+        var xb1:  byte = x1 ^ b1
+        var xb2:  byte = x2 ^ b2
+        var xb3:  byte = x3 ^ b3
+        var xb4:  byte = x4 ^ b4
+        var xb5:  byte = x5 ^ b5
+        var xb6:  byte = x6 ^ b6
+        var xb7:  byte = x7 ^ b7
+        var xb8:  byte = x8 ^ b8
+        var xb9:  byte = x9 ^ b9
+        var xb10: byte = x10 ^ b10
+        var xb11: byte = x11 ^ b11
+        var xb12: byte = x12 ^ b12
+        var xb13: byte = x13 ^ b13
+        var xb14: byte = x14 ^ b14
+        var xb15: byte = x15 ^ b15
+
+        // Compute (X XOR block) XOR K2.
+        var y0:  byte = xb0 ^ k2_0
+        var y1:  byte = xb1 ^ k2_1
+        var y2:  byte = xb2 ^ k2_2
+        var y3:  byte = xb3 ^ k2_3
+        var y4:  byte = xb4 ^ k2_4
+        var y5:  byte = xb5 ^ k2_5
+        var y6:  byte = xb6 ^ k2_6
+        var y7:  byte = xb7 ^ k2_7
+        var y8:  byte = xb8 ^ k2_8
+        var y9:  byte = xb9 ^ k2_9
+        var y10: byte = xb10 ^ k2_10
+        var y11: byte = xb11 ^ k2_11
+        var y12: byte = xb12 ^ k2_12
+        var y13: byte = xb13 ^ k2_13
+        var y14: byte = xb14 ^ k2_14
+        var y15: byte = xb15 ^ k2_15
+
+        var inputBlock: byte[16]
+        inputBlock[0]  = y0
+        inputBlock[1]  = y1
+        inputBlock[2]  = y2
+        inputBlock[3]  = y3
+        inputBlock[4]  = y4
+        inputBlock[5]  = y5
+        inputBlock[6]  = y6
+        inputBlock[7]  = y7
+        inputBlock[8]  = y8
+        inputBlock[9]  = y9
+        inputBlock[10] = y10
+        inputBlock[11] = y11
+        inputBlock[12] = y12
+        inputBlock[13] = y13
+        inputBlock[14] = y14
+        inputBlock[15] = y15
+
+        // Encrypt to produce tag.
+        this.enc.LoadBlock(inputBlock)
+        this.enc.EncryptBlock()
+        var result: byte[16] = this.enc.GetBlock()
+
+        for (var i = 0; i < 16; i++)
+        {
+            this.tag[i] = result[i]
+        }
+    }
+
+    public fn GetTag() byte[16]
+    {
+        return this.tag
+    }
+
+    public fn ClearKey()
+    {
+        for (var i = 0; i < 16; i++)
+        {
+            this.k1[i] = 0x00
+        }
+        for (var j = 0; j < 16; j++)
+        {
+            this.k2[j] = 0x00
+        }
+        for (var k = 0; k < 16; k++)
+        {
+            this.X[k] = 0x00
+        }
+        for (var m = 0; m < 16; m++)
+        {
+            this.tag[m] = 0x00
+        }
+        this.enc.ClearKey()
+    }
+
+    // -----------------------------------------------------------------------
+    // Private helpers
+    // -----------------------------------------------------------------------
+
+    // Left-shift a 128-bit value (supplied as 16 int bytes) by one bit.
+    // If the original MSB (bit 127) was 1, XOR byte 15 with Rb = 0x87.
+    fn DeriveSubkey(v0: int, v1: int, v2: int, v3: int, v4: int, v5: int, v6: int, v7: int,
+                    v8: int, v9: int, v10: int, v11: int, v12: int, v13: int, v14: int, v15: int) byte[16]
+    {
+        var msb: int = v0 / 128 % 2
+
+        // Shift each byte left by 1, carrying in MSB of the next byte.
+        var n0:  int = v0  * 2 % 256 + v1  / 128 % 2
+        var n1:  int = v1  * 2 % 256 + v2  / 128 % 2
+        var n2:  int = v2  * 2 % 256 + v3  / 128 % 2
+        var n3:  int = v3  * 2 % 256 + v4  / 128 % 2
+        var n4:  int = v4  * 2 % 256 + v5  / 128 % 2
+        var n5:  int = v5  * 2 % 256 + v6  / 128 % 2
+        var n6:  int = v6  * 2 % 256 + v7  / 128 % 2
+        var n7:  int = v7  * 2 % 256 + v8  / 128 % 2
+        var n8:  int = v8  * 2 % 256 + v9  / 128 % 2
+        var n9:  int = v9  * 2 % 256 + v10 / 128 % 2
+        var n10: int = v10 * 2 % 256 + v11 / 128 % 2
+        var n11: int = v11 * 2 % 256 + v12 / 128 % 2
+        var n12: int = v12 * 2 % 256 + v13 / 128 % 2
+        var n13: int = v13 * 2 % 256 + v14 / 128 % 2
+        var n14: int = v14 * 2 % 256 + v15 / 128 % 2
+        var n15: int = v15 * 2 % 256
+
+        // Convert int results to bytes.
+        var n0b:  byte = n0  as byte
+        var n1b:  byte = n1  as byte
+        var n2b:  byte = n2  as byte
+        var n3b:  byte = n3  as byte
+        var n4b:  byte = n4  as byte
+        var n5b:  byte = n5  as byte
+        var n6b:  byte = n6  as byte
+        var n7b:  byte = n7  as byte
+        var n8b:  byte = n8  as byte
+        var n9b:  byte = n9  as byte
+        var n10b: byte = n10 as byte
+        var n11b: byte = n11 as byte
+        var n12b: byte = n12 as byte
+        var n13b: byte = n13 as byte
+        var n14b: byte = n14 as byte
+        var n15b: byte = n15 as byte
+
+        // Conditionally XOR byte 15 with Rb = 0x87 = 135 using multiply trick
+        // (avoids if-reassignment): rbInt is 0 when msb=0, 135 when msb=1.
+        var rbInt:  int  = msb * 135
+        var rbByte: byte = rbInt as byte
+        var xn15:   byte = n15b ^ rbByte
+
+        var result: byte[16]
+        result[0]  = n0b
+        result[1]  = n1b
+        result[2]  = n2b
+        result[3]  = n3b
+        result[4]  = n4b
+        result[5]  = n5b
+        result[6]  = n6b
+        result[7]  = n7b
+        result[8]  = n8b
+        result[9]  = n9b
+        result[10] = n10b
+        result[11] = n11b
+        result[12] = n12b
+        result[13] = n13b
+        result[14] = n14b
+        result[15] = xn15
+
+        return result
+    }
+}

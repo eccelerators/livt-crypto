@@ -1,0 +1,430 @@
+namespace Livt.Crypto.Mac
+using Livt.Crypto.Hash
+
+
+// HMAC-SHA-512 (RFC 2104 + NIST FIPS 180-4) — single-block message model.
+//
+// Usage (per message):
+//   1. SetKey(key)                 — derive k_ipad / k_opad blocks from 64-byte key
+//      (key is zero-padded to the 128-byte block size internally)
+//   2. Init()                      — Reset inner SHA and process k_ipad block
+//   3. ProcessBlock(block)         — feed each additional 128-byte message block
+//      Caller is responsible for SHA-512 padding of the last message block,
+//      accounting for the 128-byte k_ipad prefix already consumed in Init().
+//      Total inner length = 128 + |message_bytes|.
+//   4. GetHmac() byte[64]          — finalise inner hash and run outer pass
+//
+// Key length convention: KEY_SIZE = 64 (= DIGEST_SIZE).  Keys ≤ 64 bytes are
+// zero-padded to 128 bytes (BLOCK_SIZE) by SetKey.  Keys > 64 bytes should be
+// SHA-512-hashed by the caller before passing to SetKey.
+component HmacSha512
+{
+    public const KEY_SIZE:    int = 64
+    public const BLOCK_SIZE:  int = 128
+    public const DIGEST_SIZE: int = 64
+
+    sha:   Sha512
+    kIpad: byte[128]
+    kOpad: byte[128]
+
+    new()
+    {
+        this.sha = new Sha512()
+    }
+
+    // -----------------------------------------------------------------------
+    // Public API
+    // -----------------------------------------------------------------------
+
+    // SetKey pads key to BLOCK_SIZE bytes then XORs with ipad (0x36) and
+    // opad (0x5c) to produce the two keyed-block constants.
+    public fn SetKey(key: byte[64])
+    {
+        // Bytes 0-63: XOR key byte with pad constants.
+        var ip0:  byte = key[0] ^ 0x36; var op0:  byte = key[0] ^ 0x5c
+        var ip1:  byte = key[1] ^ 0x36; var op1:  byte = key[1] ^ 0x5c
+        var ip2:  byte = key[2] ^ 0x36; var op2:  byte = key[2] ^ 0x5c
+        var ip3:  byte = key[3] ^ 0x36; var op3:  byte = key[3] ^ 0x5c
+        var ip4:  byte = key[4] ^ 0x36; var op4:  byte = key[4] ^ 0x5c
+        var ip5:  byte = key[5] ^ 0x36; var op5:  byte = key[5] ^ 0x5c
+        var ip6:  byte = key[6] ^ 0x36; var op6:  byte = key[6] ^ 0x5c
+        var ip7:  byte = key[7] ^ 0x36; var op7:  byte = key[7] ^ 0x5c
+        var ip8:  byte = key[8] ^ 0x36; var op8:  byte = key[8] ^ 0x5c
+        var ip9:  byte = key[9] ^ 0x36; var op9:  byte = key[9] ^ 0x5c
+        var ip10: byte = key[10] ^ 0x36; var op10: byte = key[10] ^ 0x5c
+        var ip11: byte = key[11] ^ 0x36; var op11: byte = key[11] ^ 0x5c
+        var ip12: byte = key[12] ^ 0x36; var op12: byte = key[12] ^ 0x5c
+        var ip13: byte = key[13] ^ 0x36; var op13: byte = key[13] ^ 0x5c
+        var ip14: byte = key[14] ^ 0x36; var op14: byte = key[14] ^ 0x5c
+        var ip15: byte = key[15] ^ 0x36; var op15: byte = key[15] ^ 0x5c
+        var ip16: byte = key[16] ^ 0x36; var op16: byte = key[16] ^ 0x5c
+        var ip17: byte = key[17] ^ 0x36; var op17: byte = key[17] ^ 0x5c
+        var ip18: byte = key[18] ^ 0x36; var op18: byte = key[18] ^ 0x5c
+        var ip19: byte = key[19] ^ 0x36; var op19: byte = key[19] ^ 0x5c
+        var ip20: byte = key[20] ^ 0x36; var op20: byte = key[20] ^ 0x5c
+        var ip21: byte = key[21] ^ 0x36; var op21: byte = key[21] ^ 0x5c
+        var ip22: byte = key[22] ^ 0x36; var op22: byte = key[22] ^ 0x5c
+        var ip23: byte = key[23] ^ 0x36; var op23: byte = key[23] ^ 0x5c
+        var ip24: byte = key[24] ^ 0x36; var op24: byte = key[24] ^ 0x5c
+        var ip25: byte = key[25] ^ 0x36; var op25: byte = key[25] ^ 0x5c
+        var ip26: byte = key[26] ^ 0x36; var op26: byte = key[26] ^ 0x5c
+        var ip27: byte = key[27] ^ 0x36; var op27: byte = key[27] ^ 0x5c
+        var ip28: byte = key[28] ^ 0x36; var op28: byte = key[28] ^ 0x5c
+        var ip29: byte = key[29] ^ 0x36; var op29: byte = key[29] ^ 0x5c
+        var ip30: byte = key[30] ^ 0x36; var op30: byte = key[30] ^ 0x5c
+        var ip31: byte = key[31] ^ 0x36; var op31: byte = key[31] ^ 0x5c
+        var ip32: byte = key[32] ^ 0x36; var op32: byte = key[32] ^ 0x5c
+        var ip33: byte = key[33] ^ 0x36; var op33: byte = key[33] ^ 0x5c
+        var ip34: byte = key[34] ^ 0x36; var op34: byte = key[34] ^ 0x5c
+        var ip35: byte = key[35] ^ 0x36; var op35: byte = key[35] ^ 0x5c
+        var ip36: byte = key[36] ^ 0x36; var op36: byte = key[36] ^ 0x5c
+        var ip37: byte = key[37] ^ 0x36; var op37: byte = key[37] ^ 0x5c
+        var ip38: byte = key[38] ^ 0x36; var op38: byte = key[38] ^ 0x5c
+        var ip39: byte = key[39] ^ 0x36; var op39: byte = key[39] ^ 0x5c
+        var ip40: byte = key[40] ^ 0x36; var op40: byte = key[40] ^ 0x5c
+        var ip41: byte = key[41] ^ 0x36; var op41: byte = key[41] ^ 0x5c
+        var ip42: byte = key[42] ^ 0x36; var op42: byte = key[42] ^ 0x5c
+        var ip43: byte = key[43] ^ 0x36; var op43: byte = key[43] ^ 0x5c
+        var ip44: byte = key[44] ^ 0x36; var op44: byte = key[44] ^ 0x5c
+        var ip45: byte = key[45] ^ 0x36; var op45: byte = key[45] ^ 0x5c
+        var ip46: byte = key[46] ^ 0x36; var op46: byte = key[46] ^ 0x5c
+        var ip47: byte = key[47] ^ 0x36; var op47: byte = key[47] ^ 0x5c
+        var ip48: byte = key[48] ^ 0x36; var op48: byte = key[48] ^ 0x5c
+        var ip49: byte = key[49] ^ 0x36; var op49: byte = key[49] ^ 0x5c
+        var ip50: byte = key[50] ^ 0x36; var op50: byte = key[50] ^ 0x5c
+        var ip51: byte = key[51] ^ 0x36; var op51: byte = key[51] ^ 0x5c
+        var ip52: byte = key[52] ^ 0x36; var op52: byte = key[52] ^ 0x5c
+        var ip53: byte = key[53] ^ 0x36; var op53: byte = key[53] ^ 0x5c
+        var ip54: byte = key[54] ^ 0x36; var op54: byte = key[54] ^ 0x5c
+        var ip55: byte = key[55] ^ 0x36; var op55: byte = key[55] ^ 0x5c
+        var ip56: byte = key[56] ^ 0x36; var op56: byte = key[56] ^ 0x5c
+        var ip57: byte = key[57] ^ 0x36; var op57: byte = key[57] ^ 0x5c
+        var ip58: byte = key[58] ^ 0x36; var op58: byte = key[58] ^ 0x5c
+        var ip59: byte = key[59] ^ 0x36; var op59: byte = key[59] ^ 0x5c
+        var ip60: byte = key[60] ^ 0x36; var op60: byte = key[60] ^ 0x5c
+        var ip61: byte = key[61] ^ 0x36; var op61: byte = key[61] ^ 0x5c
+        var ip62: byte = key[62] ^ 0x36; var op62: byte = key[62] ^ 0x5c
+        var ip63: byte = key[63] ^ 0x36; var op63: byte = key[63] ^ 0x5c
+
+        this.kIpad[0]  = ip0;  this.kOpad[0]  = op0
+        this.kIpad[1]  = ip1;  this.kOpad[1]  = op1
+        this.kIpad[2]  = ip2;  this.kOpad[2]  = op2
+        this.kIpad[3]  = ip3;  this.kOpad[3]  = op3
+        this.kIpad[4]  = ip4;  this.kOpad[4]  = op4
+        this.kIpad[5]  = ip5;  this.kOpad[5]  = op5
+        this.kIpad[6]  = ip6;  this.kOpad[6]  = op6
+        this.kIpad[7]  = ip7;  this.kOpad[7]  = op7
+        this.kIpad[8]  = ip8;  this.kOpad[8]  = op8
+        this.kIpad[9]  = ip9;  this.kOpad[9]  = op9
+        this.kIpad[10] = ip10; this.kOpad[10] = op10
+        this.kIpad[11] = ip11; this.kOpad[11] = op11
+        this.kIpad[12] = ip12; this.kOpad[12] = op12
+        this.kIpad[13] = ip13; this.kOpad[13] = op13
+        this.kIpad[14] = ip14; this.kOpad[14] = op14
+        this.kIpad[15] = ip15; this.kOpad[15] = op15
+        this.kIpad[16] = ip16; this.kOpad[16] = op16
+        this.kIpad[17] = ip17; this.kOpad[17] = op17
+        this.kIpad[18] = ip18; this.kOpad[18] = op18
+        this.kIpad[19] = ip19; this.kOpad[19] = op19
+        this.kIpad[20] = ip20; this.kOpad[20] = op20
+        this.kIpad[21] = ip21; this.kOpad[21] = op21
+        this.kIpad[22] = ip22; this.kOpad[22] = op22
+        this.kIpad[23] = ip23; this.kOpad[23] = op23
+        this.kIpad[24] = ip24; this.kOpad[24] = op24
+        this.kIpad[25] = ip25; this.kOpad[25] = op25
+        this.kIpad[26] = ip26; this.kOpad[26] = op26
+        this.kIpad[27] = ip27; this.kOpad[27] = op27
+        this.kIpad[28] = ip28; this.kOpad[28] = op28
+        this.kIpad[29] = ip29; this.kOpad[29] = op29
+        this.kIpad[30] = ip30; this.kOpad[30] = op30
+        this.kIpad[31] = ip31; this.kOpad[31] = op31
+        this.kIpad[32] = ip32; this.kOpad[32] = op32
+        this.kIpad[33] = ip33; this.kOpad[33] = op33
+        this.kIpad[34] = ip34; this.kOpad[34] = op34
+        this.kIpad[35] = ip35; this.kOpad[35] = op35
+        this.kIpad[36] = ip36; this.kOpad[36] = op36
+        this.kIpad[37] = ip37; this.kOpad[37] = op37
+        this.kIpad[38] = ip38; this.kOpad[38] = op38
+        this.kIpad[39] = ip39; this.kOpad[39] = op39
+        this.kIpad[40] = ip40; this.kOpad[40] = op40
+        this.kIpad[41] = ip41; this.kOpad[41] = op41
+        this.kIpad[42] = ip42; this.kOpad[42] = op42
+        this.kIpad[43] = ip43; this.kOpad[43] = op43
+        this.kIpad[44] = ip44; this.kOpad[44] = op44
+        this.kIpad[45] = ip45; this.kOpad[45] = op45
+        this.kIpad[46] = ip46; this.kOpad[46] = op46
+        this.kIpad[47] = ip47; this.kOpad[47] = op47
+        this.kIpad[48] = ip48; this.kOpad[48] = op48
+        this.kIpad[49] = ip49; this.kOpad[49] = op49
+        this.kIpad[50] = ip50; this.kOpad[50] = op50
+        this.kIpad[51] = ip51; this.kOpad[51] = op51
+        this.kIpad[52] = ip52; this.kOpad[52] = op52
+        this.kIpad[53] = ip53; this.kOpad[53] = op53
+        this.kIpad[54] = ip54; this.kOpad[54] = op54
+        this.kIpad[55] = ip55; this.kOpad[55] = op55
+        this.kIpad[56] = ip56; this.kOpad[56] = op56
+        this.kIpad[57] = ip57; this.kOpad[57] = op57
+        this.kIpad[58] = ip58; this.kOpad[58] = op58
+        this.kIpad[59] = ip59; this.kOpad[59] = op59
+        this.kIpad[60] = ip60; this.kOpad[60] = op60
+        this.kIpad[61] = ip61; this.kOpad[61] = op61
+        this.kIpad[62] = ip62; this.kOpad[62] = op62
+        this.kIpad[63] = ip63; this.kOpad[63] = op63
+
+        // Bytes 64-127: zero-padded key XOR pad = constant.
+        this.kIpad[64]  = 0x36; this.kOpad[64]  = 0x5c
+        this.kIpad[65]  = 0x36; this.kOpad[65]  = 0x5c
+        this.kIpad[66]  = 0x36; this.kOpad[66]  = 0x5c
+        this.kIpad[67]  = 0x36; this.kOpad[67]  = 0x5c
+        this.kIpad[68]  = 0x36; this.kOpad[68]  = 0x5c
+        this.kIpad[69]  = 0x36; this.kOpad[69]  = 0x5c
+        this.kIpad[70]  = 0x36; this.kOpad[70]  = 0x5c
+        this.kIpad[71]  = 0x36; this.kOpad[71]  = 0x5c
+        this.kIpad[72]  = 0x36; this.kOpad[72]  = 0x5c
+        this.kIpad[73]  = 0x36; this.kOpad[73]  = 0x5c
+        this.kIpad[74]  = 0x36; this.kOpad[74]  = 0x5c
+        this.kIpad[75]  = 0x36; this.kOpad[75]  = 0x5c
+        this.kIpad[76]  = 0x36; this.kOpad[76]  = 0x5c
+        this.kIpad[77]  = 0x36; this.kOpad[77]  = 0x5c
+        this.kIpad[78]  = 0x36; this.kOpad[78]  = 0x5c
+        this.kIpad[79]  = 0x36; this.kOpad[79]  = 0x5c
+        this.kIpad[80]  = 0x36; this.kOpad[80]  = 0x5c
+        this.kIpad[81]  = 0x36; this.kOpad[81]  = 0x5c
+        this.kIpad[82]  = 0x36; this.kOpad[82]  = 0x5c
+        this.kIpad[83]  = 0x36; this.kOpad[83]  = 0x5c
+        this.kIpad[84]  = 0x36; this.kOpad[84]  = 0x5c
+        this.kIpad[85]  = 0x36; this.kOpad[85]  = 0x5c
+        this.kIpad[86]  = 0x36; this.kOpad[86]  = 0x5c
+        this.kIpad[87]  = 0x36; this.kOpad[87]  = 0x5c
+        this.kIpad[88]  = 0x36; this.kOpad[88]  = 0x5c
+        this.kIpad[89]  = 0x36; this.kOpad[89]  = 0x5c
+        this.kIpad[90]  = 0x36; this.kOpad[90]  = 0x5c
+        this.kIpad[91]  = 0x36; this.kOpad[91]  = 0x5c
+        this.kIpad[92]  = 0x36; this.kOpad[92]  = 0x5c
+        this.kIpad[93]  = 0x36; this.kOpad[93]  = 0x5c
+        this.kIpad[94]  = 0x36; this.kOpad[94]  = 0x5c
+        this.kIpad[95]  = 0x36; this.kOpad[95]  = 0x5c
+        this.kIpad[96]  = 0x36; this.kOpad[96]  = 0x5c
+        this.kIpad[97]  = 0x36; this.kOpad[97]  = 0x5c
+        this.kIpad[98]  = 0x36; this.kOpad[98]  = 0x5c
+        this.kIpad[99]  = 0x36; this.kOpad[99]  = 0x5c
+        this.kIpad[100] = 0x36; this.kOpad[100] = 0x5c
+        this.kIpad[101] = 0x36; this.kOpad[101] = 0x5c
+        this.kIpad[102] = 0x36; this.kOpad[102] = 0x5c
+        this.kIpad[103] = 0x36; this.kOpad[103] = 0x5c
+        this.kIpad[104] = 0x36; this.kOpad[104] = 0x5c
+        this.kIpad[105] = 0x36; this.kOpad[105] = 0x5c
+        this.kIpad[106] = 0x36; this.kOpad[106] = 0x5c
+        this.kIpad[107] = 0x36; this.kOpad[107] = 0x5c
+        this.kIpad[108] = 0x36; this.kOpad[108] = 0x5c
+        this.kIpad[109] = 0x36; this.kOpad[109] = 0x5c
+        this.kIpad[110] = 0x36; this.kOpad[110] = 0x5c
+        this.kIpad[111] = 0x36; this.kOpad[111] = 0x5c
+        this.kIpad[112] = 0x36; this.kOpad[112] = 0x5c
+        this.kIpad[113] = 0x36; this.kOpad[113] = 0x5c
+        this.kIpad[114] = 0x36; this.kOpad[114] = 0x5c
+        this.kIpad[115] = 0x36; this.kOpad[115] = 0x5c
+        this.kIpad[116] = 0x36; this.kOpad[116] = 0x5c
+        this.kIpad[117] = 0x36; this.kOpad[117] = 0x5c
+        this.kIpad[118] = 0x36; this.kOpad[118] = 0x5c
+        this.kIpad[119] = 0x36; this.kOpad[119] = 0x5c
+        this.kIpad[120] = 0x36; this.kOpad[120] = 0x5c
+        this.kIpad[121] = 0x36; this.kOpad[121] = 0x5c
+        this.kIpad[122] = 0x36; this.kOpad[122] = 0x5c
+        this.kIpad[123] = 0x36; this.kOpad[123] = 0x5c
+        this.kIpad[124] = 0x36; this.kOpad[124] = 0x5c
+        this.kIpad[125] = 0x36; this.kOpad[125] = 0x5c
+        this.kIpad[126] = 0x36; this.kOpad[126] = 0x5c
+        this.kIpad[127] = 0x36; this.kOpad[127] = 0x5c
+    }
+
+    // Init resets the inner SHA-512 state and processes the k_ipad block.
+    // Must be called before the first ProcessBlock for each new message.
+    public fn Init()
+    {
+        var ipadBlock: byte[128]
+        ipadBlock[0]   = this.kIpad[0];   ipadBlock[1]   = this.kIpad[1];   ipadBlock[2]   = this.kIpad[2];   ipadBlock[3]   = this.kIpad[3]
+        ipadBlock[4]   = this.kIpad[4];   ipadBlock[5]   = this.kIpad[5];   ipadBlock[6]   = this.kIpad[6];   ipadBlock[7]   = this.kIpad[7]
+        ipadBlock[8]   = this.kIpad[8];   ipadBlock[9]   = this.kIpad[9];   ipadBlock[10]  = this.kIpad[10];  ipadBlock[11]  = this.kIpad[11]
+        ipadBlock[12]  = this.kIpad[12];  ipadBlock[13]  = this.kIpad[13];  ipadBlock[14]  = this.kIpad[14];  ipadBlock[15]  = this.kIpad[15]
+        ipadBlock[16]  = this.kIpad[16];  ipadBlock[17]  = this.kIpad[17];  ipadBlock[18]  = this.kIpad[18];  ipadBlock[19]  = this.kIpad[19]
+        ipadBlock[20]  = this.kIpad[20];  ipadBlock[21]  = this.kIpad[21];  ipadBlock[22]  = this.kIpad[22];  ipadBlock[23]  = this.kIpad[23]
+        ipadBlock[24]  = this.kIpad[24];  ipadBlock[25]  = this.kIpad[25];  ipadBlock[26]  = this.kIpad[26];  ipadBlock[27]  = this.kIpad[27]
+        ipadBlock[28]  = this.kIpad[28];  ipadBlock[29]  = this.kIpad[29];  ipadBlock[30]  = this.kIpad[30];  ipadBlock[31]  = this.kIpad[31]
+        ipadBlock[32]  = this.kIpad[32];  ipadBlock[33]  = this.kIpad[33];  ipadBlock[34]  = this.kIpad[34];  ipadBlock[35]  = this.kIpad[35]
+        ipadBlock[36]  = this.kIpad[36];  ipadBlock[37]  = this.kIpad[37];  ipadBlock[38]  = this.kIpad[38];  ipadBlock[39]  = this.kIpad[39]
+        ipadBlock[40]  = this.kIpad[40];  ipadBlock[41]  = this.kIpad[41];  ipadBlock[42]  = this.kIpad[42];  ipadBlock[43]  = this.kIpad[43]
+        ipadBlock[44]  = this.kIpad[44];  ipadBlock[45]  = this.kIpad[45];  ipadBlock[46]  = this.kIpad[46];  ipadBlock[47]  = this.kIpad[47]
+        ipadBlock[48]  = this.kIpad[48];  ipadBlock[49]  = this.kIpad[49];  ipadBlock[50]  = this.kIpad[50];  ipadBlock[51]  = this.kIpad[51]
+        ipadBlock[52]  = this.kIpad[52];  ipadBlock[53]  = this.kIpad[53];  ipadBlock[54]  = this.kIpad[54];  ipadBlock[55]  = this.kIpad[55]
+        ipadBlock[56]  = this.kIpad[56];  ipadBlock[57]  = this.kIpad[57];  ipadBlock[58]  = this.kIpad[58];  ipadBlock[59]  = this.kIpad[59]
+        ipadBlock[60]  = this.kIpad[60];  ipadBlock[61]  = this.kIpad[61];  ipadBlock[62]  = this.kIpad[62];  ipadBlock[63]  = this.kIpad[63]
+        ipadBlock[64]  = this.kIpad[64];  ipadBlock[65]  = this.kIpad[65];  ipadBlock[66]  = this.kIpad[66];  ipadBlock[67]  = this.kIpad[67]
+        ipadBlock[68]  = this.kIpad[68];  ipadBlock[69]  = this.kIpad[69];  ipadBlock[70]  = this.kIpad[70];  ipadBlock[71]  = this.kIpad[71]
+        ipadBlock[72]  = this.kIpad[72];  ipadBlock[73]  = this.kIpad[73];  ipadBlock[74]  = this.kIpad[74];  ipadBlock[75]  = this.kIpad[75]
+        ipadBlock[76]  = this.kIpad[76];  ipadBlock[77]  = this.kIpad[77];  ipadBlock[78]  = this.kIpad[78];  ipadBlock[79]  = this.kIpad[79]
+        ipadBlock[80]  = this.kIpad[80];  ipadBlock[81]  = this.kIpad[81];  ipadBlock[82]  = this.kIpad[82];  ipadBlock[83]  = this.kIpad[83]
+        ipadBlock[84]  = this.kIpad[84];  ipadBlock[85]  = this.kIpad[85];  ipadBlock[86]  = this.kIpad[86];  ipadBlock[87]  = this.kIpad[87]
+        ipadBlock[88]  = this.kIpad[88];  ipadBlock[89]  = this.kIpad[89];  ipadBlock[90]  = this.kIpad[90];  ipadBlock[91]  = this.kIpad[91]
+        ipadBlock[92]  = this.kIpad[92];  ipadBlock[93]  = this.kIpad[93];  ipadBlock[94]  = this.kIpad[94];  ipadBlock[95]  = this.kIpad[95]
+        ipadBlock[96]  = this.kIpad[96];  ipadBlock[97]  = this.kIpad[97];  ipadBlock[98]  = this.kIpad[98];  ipadBlock[99]  = this.kIpad[99]
+        ipadBlock[100] = this.kIpad[100]; ipadBlock[101] = this.kIpad[101]; ipadBlock[102] = this.kIpad[102]; ipadBlock[103] = this.kIpad[103]
+        ipadBlock[104] = this.kIpad[104]; ipadBlock[105] = this.kIpad[105]; ipadBlock[106] = this.kIpad[106]; ipadBlock[107] = this.kIpad[107]
+        ipadBlock[108] = this.kIpad[108]; ipadBlock[109] = this.kIpad[109]; ipadBlock[110] = this.kIpad[110]; ipadBlock[111] = this.kIpad[111]
+        ipadBlock[112] = this.kIpad[112]; ipadBlock[113] = this.kIpad[113]; ipadBlock[114] = this.kIpad[114]; ipadBlock[115] = this.kIpad[115]
+        ipadBlock[116] = this.kIpad[116]; ipadBlock[117] = this.kIpad[117]; ipadBlock[118] = this.kIpad[118]; ipadBlock[119] = this.kIpad[119]
+        ipadBlock[120] = this.kIpad[120]; ipadBlock[121] = this.kIpad[121]; ipadBlock[122] = this.kIpad[122]; ipadBlock[123] = this.kIpad[123]
+        ipadBlock[124] = this.kIpad[124]; ipadBlock[125] = this.kIpad[125]; ipadBlock[126] = this.kIpad[126]; ipadBlock[127] = this.kIpad[127]
+
+        this.sha.Reset()
+        this.sha.ProcessBlock(ipadBlock)
+    }
+
+    // ProcessBlock feeds one 128-byte message block to the inner SHA-512 state.
+    public fn ProcessBlock(block: byte[128])
+    {
+        this.sha.ProcessBlock(block)
+    }
+
+    // GetHmac finalises the inner hash then runs the outer SHA-512 pass and
+    // returns the 64-byte HMAC.
+    // Outer SHA-512 input = k_opad (128 B) || inner_digest (64 B) = 192 B.
+    // Outer block 1 = k_opad.
+    // Outer block 2 = inner_digest || 0x80 || 0x00*47 || be128(1536) (192*8 = 1536 = 0x600).
+    public fn GetHmac() byte[64]
+    {
+        // Capture inner digest before resetting SHA.
+        var innerDigest: byte[64] = this.sha.GetDigest()
+        var id0:  byte = innerDigest[0];  var id1:  byte = innerDigest[1];  var id2:  byte = innerDigest[2];  var id3:  byte = innerDigest[3]
+        var id4:  byte = innerDigest[4];  var id5:  byte = innerDigest[5];  var id6:  byte = innerDigest[6];  var id7:  byte = innerDigest[7]
+        var id8:  byte = innerDigest[8];  var id9:  byte = innerDigest[9];  var id10: byte = innerDigest[10]; var id11: byte = innerDigest[11]
+        var id12: byte = innerDigest[12]; var id13: byte = innerDigest[13]; var id14: byte = innerDigest[14]; var id15: byte = innerDigest[15]
+        var id16: byte = innerDigest[16]; var id17: byte = innerDigest[17]; var id18: byte = innerDigest[18]; var id19: byte = innerDigest[19]
+        var id20: byte = innerDigest[20]; var id21: byte = innerDigest[21]; var id22: byte = innerDigest[22]; var id23: byte = innerDigest[23]
+        var id24: byte = innerDigest[24]; var id25: byte = innerDigest[25]; var id26: byte = innerDigest[26]; var id27: byte = innerDigest[27]
+        var id28: byte = innerDigest[28]; var id29: byte = innerDigest[29]; var id30: byte = innerDigest[30]; var id31: byte = innerDigest[31]
+        var id32: byte = innerDigest[32]; var id33: byte = innerDigest[33]; var id34: byte = innerDigest[34]; var id35: byte = innerDigest[35]
+        var id36: byte = innerDigest[36]; var id37: byte = innerDigest[37]; var id38: byte = innerDigest[38]; var id39: byte = innerDigest[39]
+        var id40: byte = innerDigest[40]; var id41: byte = innerDigest[41]; var id42: byte = innerDigest[42]; var id43: byte = innerDigest[43]
+        var id44: byte = innerDigest[44]; var id45: byte = innerDigest[45]; var id46: byte = innerDigest[46]; var id47: byte = innerDigest[47]
+        var id48: byte = innerDigest[48]; var id49: byte = innerDigest[49]; var id50: byte = innerDigest[50]; var id51: byte = innerDigest[51]
+        var id52: byte = innerDigest[52]; var id53: byte = innerDigest[53]; var id54: byte = innerDigest[54]; var id55: byte = innerDigest[55]
+        var id56: byte = innerDigest[56]; var id57: byte = innerDigest[57]; var id58: byte = innerDigest[58]; var id59: byte = innerDigest[59]
+        var id60: byte = innerDigest[60]; var id61: byte = innerDigest[61]; var id62: byte = innerDigest[62]; var id63: byte = innerDigest[63]
+
+        // Pre-read kOpad into locals.
+        var o0:   byte = this.kOpad[0];   var o1:   byte = this.kOpad[1];   var o2:   byte = this.kOpad[2];   var o3:   byte = this.kOpad[3]
+        var o4:   byte = this.kOpad[4];   var o5:   byte = this.kOpad[5];   var o6:   byte = this.kOpad[6];   var o7:   byte = this.kOpad[7]
+        var o8:   byte = this.kOpad[8];   var o9:   byte = this.kOpad[9];   var o10:  byte = this.kOpad[10];  var o11:  byte = this.kOpad[11]
+        var o12:  byte = this.kOpad[12];  var o13:  byte = this.kOpad[13];  var o14:  byte = this.kOpad[14];  var o15:  byte = this.kOpad[15]
+        var o16:  byte = this.kOpad[16];  var o17:  byte = this.kOpad[17];  var o18:  byte = this.kOpad[18];  var o19:  byte = this.kOpad[19]
+        var o20:  byte = this.kOpad[20];  var o21:  byte = this.kOpad[21];  var o22:  byte = this.kOpad[22];  var o23:  byte = this.kOpad[23]
+        var o24:  byte = this.kOpad[24];  var o25:  byte = this.kOpad[25];  var o26:  byte = this.kOpad[26];  var o27:  byte = this.kOpad[27]
+        var o28:  byte = this.kOpad[28];  var o29:  byte = this.kOpad[29];  var o30:  byte = this.kOpad[30];  var o31:  byte = this.kOpad[31]
+        var o32:  byte = this.kOpad[32];  var o33:  byte = this.kOpad[33];  var o34:  byte = this.kOpad[34];  var o35:  byte = this.kOpad[35]
+        var o36:  byte = this.kOpad[36];  var o37:  byte = this.kOpad[37];  var o38:  byte = this.kOpad[38];  var o39:  byte = this.kOpad[39]
+        var o40:  byte = this.kOpad[40];  var o41:  byte = this.kOpad[41];  var o42:  byte = this.kOpad[42];  var o43:  byte = this.kOpad[43]
+        var o44:  byte = this.kOpad[44];  var o45:  byte = this.kOpad[45];  var o46:  byte = this.kOpad[46];  var o47:  byte = this.kOpad[47]
+        var o48:  byte = this.kOpad[48];  var o49:  byte = this.kOpad[49];  var o50:  byte = this.kOpad[50];  var o51:  byte = this.kOpad[51]
+        var o52:  byte = this.kOpad[52];  var o53:  byte = this.kOpad[53];  var o54:  byte = this.kOpad[54];  var o55:  byte = this.kOpad[55]
+        var o56:  byte = this.kOpad[56];  var o57:  byte = this.kOpad[57];  var o58:  byte = this.kOpad[58];  var o59:  byte = this.kOpad[59]
+        var o60:  byte = this.kOpad[60];  var o61:  byte = this.kOpad[61];  var o62:  byte = this.kOpad[62];  var o63:  byte = this.kOpad[63]
+        var o64:  byte = this.kOpad[64];  var o65:  byte = this.kOpad[65];  var o66:  byte = this.kOpad[66];  var o67:  byte = this.kOpad[67]
+        var o68:  byte = this.kOpad[68];  var o69:  byte = this.kOpad[69];  var o70:  byte = this.kOpad[70];  var o71:  byte = this.kOpad[71]
+        var o72:  byte = this.kOpad[72];  var o73:  byte = this.kOpad[73];  var o74:  byte = this.kOpad[74];  var o75:  byte = this.kOpad[75]
+        var o76:  byte = this.kOpad[76];  var o77:  byte = this.kOpad[77];  var o78:  byte = this.kOpad[78];  var o79:  byte = this.kOpad[79]
+        var o80:  byte = this.kOpad[80];  var o81:  byte = this.kOpad[81];  var o82:  byte = this.kOpad[82];  var o83:  byte = this.kOpad[83]
+        var o84:  byte = this.kOpad[84];  var o85:  byte = this.kOpad[85];  var o86:  byte = this.kOpad[86];  var o87:  byte = this.kOpad[87]
+        var o88:  byte = this.kOpad[88];  var o89:  byte = this.kOpad[89];  var o90:  byte = this.kOpad[90];  var o91:  byte = this.kOpad[91]
+        var o92:  byte = this.kOpad[92];  var o93:  byte = this.kOpad[93];  var o94:  byte = this.kOpad[94];  var o95:  byte = this.kOpad[95]
+        var o96:  byte = this.kOpad[96];  var o97:  byte = this.kOpad[97];  var o98:  byte = this.kOpad[98];  var o99:  byte = this.kOpad[99]
+        var o100: byte = this.kOpad[100]; var o101: byte = this.kOpad[101]; var o102: byte = this.kOpad[102]; var o103: byte = this.kOpad[103]
+        var o104: byte = this.kOpad[104]; var o105: byte = this.kOpad[105]; var o106: byte = this.kOpad[106]; var o107: byte = this.kOpad[107]
+        var o108: byte = this.kOpad[108]; var o109: byte = this.kOpad[109]; var o110: byte = this.kOpad[110]; var o111: byte = this.kOpad[111]
+        var o112: byte = this.kOpad[112]; var o113: byte = this.kOpad[113]; var o114: byte = this.kOpad[114]; var o115: byte = this.kOpad[115]
+        var o116: byte = this.kOpad[116]; var o117: byte = this.kOpad[117]; var o118: byte = this.kOpad[118]; var o119: byte = this.kOpad[119]
+        var o120: byte = this.kOpad[120]; var o121: byte = this.kOpad[121]; var o122: byte = this.kOpad[122]; var o123: byte = this.kOpad[123]
+        var o124: byte = this.kOpad[124]; var o125: byte = this.kOpad[125]; var o126: byte = this.kOpad[126]; var o127: byte = this.kOpad[127]
+
+        // Outer pass block 1: k_opad.
+        var opadBlock: byte[128]
+        opadBlock[0]   = o0;   opadBlock[1]   = o1;   opadBlock[2]   = o2;   opadBlock[3]   = o3
+        opadBlock[4]   = o4;   opadBlock[5]   = o5;   opadBlock[6]   = o6;   opadBlock[7]   = o7
+        opadBlock[8]   = o8;   opadBlock[9]   = o9;   opadBlock[10]  = o10;  opadBlock[11]  = o11
+        opadBlock[12]  = o12;  opadBlock[13]  = o13;  opadBlock[14]  = o14;  opadBlock[15]  = o15
+        opadBlock[16]  = o16;  opadBlock[17]  = o17;  opadBlock[18]  = o18;  opadBlock[19]  = o19
+        opadBlock[20]  = o20;  opadBlock[21]  = o21;  opadBlock[22]  = o22;  opadBlock[23]  = o23
+        opadBlock[24]  = o24;  opadBlock[25]  = o25;  opadBlock[26]  = o26;  opadBlock[27]  = o27
+        opadBlock[28]  = o28;  opadBlock[29]  = o29;  opadBlock[30]  = o30;  opadBlock[31]  = o31
+        opadBlock[32]  = o32;  opadBlock[33]  = o33;  opadBlock[34]  = o34;  opadBlock[35]  = o35
+        opadBlock[36]  = o36;  opadBlock[37]  = o37;  opadBlock[38]  = o38;  opadBlock[39]  = o39
+        opadBlock[40]  = o40;  opadBlock[41]  = o41;  opadBlock[42]  = o42;  opadBlock[43]  = o43
+        opadBlock[44]  = o44;  opadBlock[45]  = o45;  opadBlock[46]  = o46;  opadBlock[47]  = o47
+        opadBlock[48]  = o48;  opadBlock[49]  = o49;  opadBlock[50]  = o50;  opadBlock[51]  = o51
+        opadBlock[52]  = o52;  opadBlock[53]  = o53;  opadBlock[54]  = o54;  opadBlock[55]  = o55
+        opadBlock[56]  = o56;  opadBlock[57]  = o57;  opadBlock[58]  = o58;  opadBlock[59]  = o59
+        opadBlock[60]  = o60;  opadBlock[61]  = o61;  opadBlock[62]  = o62;  opadBlock[63]  = o63
+        opadBlock[64]  = o64;  opadBlock[65]  = o65;  opadBlock[66]  = o66;  opadBlock[67]  = o67
+        opadBlock[68]  = o68;  opadBlock[69]  = o69;  opadBlock[70]  = o70;  opadBlock[71]  = o71
+        opadBlock[72]  = o72;  opadBlock[73]  = o73;  opadBlock[74]  = o74;  opadBlock[75]  = o75
+        opadBlock[76]  = o76;  opadBlock[77]  = o77;  opadBlock[78]  = o78;  opadBlock[79]  = o79
+        opadBlock[80]  = o80;  opadBlock[81]  = o81;  opadBlock[82]  = o82;  opadBlock[83]  = o83
+        opadBlock[84]  = o84;  opadBlock[85]  = o85;  opadBlock[86]  = o86;  opadBlock[87]  = o87
+        opadBlock[88]  = o88;  opadBlock[89]  = o89;  opadBlock[90]  = o90;  opadBlock[91]  = o91
+        opadBlock[92]  = o92;  opadBlock[93]  = o93;  opadBlock[94]  = o94;  opadBlock[95]  = o95
+        opadBlock[96]  = o96;  opadBlock[97]  = o97;  opadBlock[98]  = o98;  opadBlock[99]  = o99
+        opadBlock[100] = o100; opadBlock[101] = o101; opadBlock[102] = o102; opadBlock[103] = o103
+        opadBlock[104] = o104; opadBlock[105] = o105; opadBlock[106] = o106; opadBlock[107] = o107
+        opadBlock[108] = o108; opadBlock[109] = o109; opadBlock[110] = o110; opadBlock[111] = o111
+        opadBlock[112] = o112; opadBlock[113] = o113; opadBlock[114] = o114; opadBlock[115] = o115
+        opadBlock[116] = o116; opadBlock[117] = o117; opadBlock[118] = o118; opadBlock[119] = o119
+        opadBlock[120] = o120; opadBlock[121] = o121; opadBlock[122] = o122; opadBlock[123] = o123
+        opadBlock[124] = o124; opadBlock[125] = o125; opadBlock[126] = o126; opadBlock[127] = o127
+
+        this.sha.Reset()
+        this.sha.ProcessBlock(opadBlock)
+
+        // Outer pass block 2: inner_digest || SHA-512 padding for 192-byte outer message.
+        // 192 * 8 = 1536 = 0x00000000000000000000000000000600 (128-bit big-endian)
+        var ob2: byte[128]
+        ob2[0]   = id0;  ob2[1]   = id1;  ob2[2]   = id2;  ob2[3]   = id3
+        ob2[4]   = id4;  ob2[5]   = id5;  ob2[6]   = id6;  ob2[7]   = id7
+        ob2[8]   = id8;  ob2[9]   = id9;  ob2[10]  = id10; ob2[11]  = id11
+        ob2[12]  = id12; ob2[13]  = id13; ob2[14]  = id14; ob2[15]  = id15
+        ob2[16]  = id16; ob2[17]  = id17; ob2[18]  = id18; ob2[19]  = id19
+        ob2[20]  = id20; ob2[21]  = id21; ob2[22]  = id22; ob2[23]  = id23
+        ob2[24]  = id24; ob2[25]  = id25; ob2[26]  = id26; ob2[27]  = id27
+        ob2[28]  = id28; ob2[29]  = id29; ob2[30]  = id30; ob2[31]  = id31
+        ob2[32]  = id32; ob2[33]  = id33; ob2[34]  = id34; ob2[35]  = id35
+        ob2[36]  = id36; ob2[37]  = id37; ob2[38]  = id38; ob2[39]  = id39
+        ob2[40]  = id40; ob2[41]  = id41; ob2[42]  = id42; ob2[43]  = id43
+        ob2[44]  = id44; ob2[45]  = id45; ob2[46]  = id46; ob2[47]  = id47
+        ob2[48]  = id48; ob2[49]  = id49; ob2[50]  = id50; ob2[51]  = id51
+        ob2[52]  = id52; ob2[53]  = id53; ob2[54]  = id54; ob2[55]  = id55
+        ob2[56]  = id56; ob2[57]  = id57; ob2[58]  = id58; ob2[59]  = id59
+        ob2[60]  = id60; ob2[61]  = id61; ob2[62]  = id62; ob2[63]  = id63
+        ob2[64]  = 0x80
+        ob2[65]  = 0x00; ob2[66]  = 0x00; ob2[67]  = 0x00; ob2[68]  = 0x00
+        ob2[69]  = 0x00; ob2[70]  = 0x00; ob2[71]  = 0x00; ob2[72]  = 0x00
+        ob2[73]  = 0x00; ob2[74]  = 0x00; ob2[75]  = 0x00; ob2[76]  = 0x00
+        ob2[77]  = 0x00; ob2[78]  = 0x00; ob2[79]  = 0x00; ob2[80]  = 0x00
+        ob2[81]  = 0x00; ob2[82]  = 0x00; ob2[83]  = 0x00; ob2[84]  = 0x00
+        ob2[85]  = 0x00; ob2[86]  = 0x00; ob2[87]  = 0x00; ob2[88]  = 0x00
+        ob2[89]  = 0x00; ob2[90]  = 0x00; ob2[91]  = 0x00; ob2[92]  = 0x00
+        ob2[93]  = 0x00; ob2[94]  = 0x00; ob2[95]  = 0x00; ob2[96]  = 0x00
+        ob2[97]  = 0x00; ob2[98]  = 0x00; ob2[99]  = 0x00; ob2[100] = 0x00
+        ob2[101] = 0x00; ob2[102] = 0x00; ob2[103] = 0x00; ob2[104] = 0x00
+        ob2[105] = 0x00; ob2[106] = 0x00; ob2[107] = 0x00; ob2[108] = 0x00
+        ob2[109] = 0x00; ob2[110] = 0x00; ob2[111] = 0x00
+        // 128-bit big-endian length: 0x00*14 0x06 0x00
+        ob2[112] = 0x00; ob2[113] = 0x00; ob2[114] = 0x00; ob2[115] = 0x00
+        ob2[116] = 0x00; ob2[117] = 0x00; ob2[118] = 0x00; ob2[119] = 0x00
+        ob2[120] = 0x00; ob2[121] = 0x00; ob2[122] = 0x00; ob2[123] = 0x00
+        ob2[124] = 0x00; ob2[125] = 0x00; ob2[126] = 0x06; ob2[127] = 0x00
+
+        this.sha.ProcessBlock(ob2)
+        return this.sha.GetDigest()
+    }
+
+    // -----------------------------------------------------------------------
+}

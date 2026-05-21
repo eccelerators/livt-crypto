@@ -1,0 +1,106 @@
+namespace Livt.Crypto.Tests.Hash
+using Livt.Crypto.Hash
+
+
+
+// Tests for Sha3256 (NIST FIPS 202).
+@Test component Sha3256Test
+{
+    sha: Sha3256
+
+    new()
+    {
+        this.sha = new Sha3256()
+    }
+
+    // NIST FIPS 202 test vector: SHA3-256("") (empty message).
+    // Expected:
+    //   a7 ff c6 f8  bf 1e d7 66  51 c1 47 56  a0 61 d6 62
+    //   f5 80 ff 4d  e4 3b 49 fa  82 d8 0a 4b  80 f8 43 4a
+    @Test fn TestEmptyMessage()
+    {
+        this.sha.Reset()
+        var emptyBlock: byte[136]
+        this.sha.Finalize(emptyBlock, 0)
+        var digest: byte[32] = this.sha.GetDigest()
+        assert digest[0]  == 0xa7
+        assert digest[1]  == 0xff
+        assert digest[2]  == 0xc6
+        assert digest[3]  == 0xf8
+        assert digest[4]  == 0xbf
+        assert digest[5]  == 0x1e
+        assert digest[6]  == 0xd7
+        assert digest[7]  == 0x66
+        assert digest[8]  == 0x51
+        assert digest[9]  == 0xc1
+        assert digest[10] == 0x47
+        assert digest[11] == 0x56
+        assert digest[12] == 0xa0
+        assert digest[13] == 0x61
+        assert digest[14] == 0xd6
+        assert digest[15] == 0x62
+        assert digest[16] == 0xf5
+        assert digest[17] == 0x80
+        assert digest[18] == 0xff
+        assert digest[19] == 0x4d
+        assert digest[20] == 0xe4
+        assert digest[21] == 0x3b
+        assert digest[22] == 0x49
+        assert digest[23] == 0xfa
+        assert digest[24] == 0x82
+        assert digest[25] == 0xd8
+        assert digest[26] == 0x0a
+        assert digest[27] == 0x4b
+        assert digest[28] == 0x80
+        assert digest[29] == 0xf8
+        assert digest[30] == 0x43
+        assert digest[31] == 0x4a
+    }
+
+    // NIST FIPS 202 test vector: SHA3-256("abc").
+    // Expected:
+    //   3a 98 5d a7  4f e2 25 b2  04 5c 17 2d  6b d3 90 bd
+    //   85 5f 08 6e  3e 9d 52 5b  46 bf e2 45  11 43 15 32
+    @Test fn TestAbcMessage()
+    {
+        this.sha.Reset()
+        var lastBlock: byte[136]
+        lastBlock[0] = 0x61
+        lastBlock[1] = 0x62
+        lastBlock[2] = 0x63
+        this.sha.Finalize(lastBlock, 3)
+        var digest: byte[32] = this.sha.GetDigest()
+        assert digest[0]  == 0x3a
+        assert digest[1]  == 0x98
+        assert digest[2]  == 0x5d
+        assert digest[3]  == 0xa7
+        assert digest[4]  == 0x4f
+        assert digest[5]  == 0xe2
+        assert digest[6]  == 0x25
+        assert digest[7]  == 0xb2
+        assert digest[8]  == 0x04
+        assert digest[9]  == 0x5c
+        assert digest[10] == 0x17
+        assert digest[11] == 0x2d
+        assert digest[12] == 0x6b
+        assert digest[13] == 0xd3
+        assert digest[14] == 0x90
+        assert digest[15] == 0xbd
+        assert digest[16] == 0x85
+        assert digest[17] == 0x5f
+        assert digest[18] == 0x08
+        assert digest[19] == 0x6e
+        assert digest[20] == 0x3e
+        assert digest[21] == 0x9d
+        assert digest[22] == 0x52
+        assert digest[23] == 0x5b
+        assert digest[24] == 0x46
+        assert digest[25] == 0xbf
+        assert digest[26] == 0xe2
+        assert digest[27] == 0x45
+        assert digest[28] == 0x11
+        assert digest[29] == 0x43
+        assert digest[30] == 0x15
+        assert digest[31] == 0x32
+    }
+}

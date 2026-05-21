@@ -1,0 +1,41 @@
+[project]
+name = "Livt.Crypto"
+version = "1.0.0"
+path = "src"
+outdir = "out"
+
+[tests]
+path = "tests"
+components = [
+    "AesSBoxTest",
+    "AesSBoxInverseTest",
+    "Aes128Test",
+    "AesDecryptBlock128Test",
+    "Aes192Test",
+    "AesDecryptBlock192Test",
+    "Aes256Test",
+    "AesDecryptBlock256Test",
+    "AesCbc128Test",
+    "AesCbc192Test",
+    "AesCbc256Test",
+    "AesCtr128Test",
+    "AesCtr192Test",
+    "AesCtr256Test",
+    "Aes128GcmTest",
+    "Aes192GcmTest",
+    "Aes256GcmTest",
+    "AesCmac128Test",
+    "AesCmac192Test",
+    "AesCmac256Test",
+    "Aes256CtrDrbgTest",
+    "Sha256Test",
+    "Sha512Test",
+    "HmacSha256Test",
+    "HmacSha512Test",
+    "HkdfSha256Test",
+    "ChaCha20Test",
+    "Poly1305Test",
+    "ChaCha20Poly1305Test",
+    "Sha3256Test",
+    "Sha3512Test"
+]

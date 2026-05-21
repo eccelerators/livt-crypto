@@ -1,0 +1,209 @@
+namespace Livt.Crypto.Aes
+
+// AES-192 CTR (Counter) mode — single-block interface.
+// CTR is symmetric: CryptBlock() performs both encryption and decryption.
+// Keystream: Si = AES192_Encrypt(nonce || counter_i).
+// Output:    Oi = Input XOR Si.
+// Counter uses NIST Inc32: rightmost 32 bits increment, upper 96 bits fixed as nonce.
+component Ctr192
+{
+    public const KEY_SIZE:   int = 24
+    public const BLOCK_SIZE: int = 16
+    public const NONCE_SIZE: int = 12
+
+    enc:    EncryptBlock192
+    nonce:  byte[12]
+    ctr12:  int
+    ctr13:  int
+    ctr14:  int
+    ctr15:  int
+    blk:    byte[16]
+    outBlk: byte[16]
+
+    new()
+    {
+        this.enc = new EncryptBlock192()
+    }
+
+    // -----------------------------------------------------------------------
+    // Public API
+    // -----------------------------------------------------------------------
+
+    public fn SetKey(key: byte[24])
+    {
+        this.enc.SetKey(key)
+    }
+
+    // SetCounter accepts a full 16-byte counter block.
+    // Bytes 0-11 become the fixed nonce; bytes 12-15 become the 32-bit counter
+    // (big-endian, NIST Inc32).
+    public fn SetCounter(counter: byte[16])
+    {
+        state {
+            this.nonce[0]  = counter[0]
+            this.nonce[1]  = counter[1]
+            this.nonce[2]  = counter[2]
+            this.nonce[3]  = counter[3]
+            this.nonce[4]  = counter[4]
+            this.nonce[5]  = counter[5]
+            this.nonce[6]  = counter[6]
+            this.nonce[7]  = counter[7]
+            this.nonce[8]  = counter[8]
+            this.nonce[9]  = counter[9]
+            this.nonce[10] = counter[10]
+            this.nonce[11] = counter[11]
+        }
+        this.ctr12 = counter[12] as int
+        this.ctr13 = counter[13] as int
+        this.ctr14 = counter[14] as int
+        this.ctr15 = counter[15] as int
+    }
+
+    public fn LoadBlock(block: byte[16])
+    {
+        state {
+            this.blk[0]  = block[0]
+            this.blk[1]  = block[1]
+            this.blk[2]  = block[2]
+            this.blk[3]  = block[3]
+            this.blk[4]  = block[4]
+            this.blk[5]  = block[5]
+            this.blk[6]  = block[6]
+            this.blk[7]  = block[7]
+            this.blk[8]  = block[8]
+            this.blk[9]  = block[9]
+            this.blk[10] = block[10]
+            this.blk[11] = block[11]
+            this.blk[12] = block[12]
+            this.blk[13] = block[13]
+            this.blk[14] = block[14]
+            this.blk[15] = block[15]
+        }
+    }
+
+    // Encrypt or decrypt one block (CTR is symmetric).
+    // Encrypts the current counter block to produce a keystream block,
+    // XORs it with the input, then increments the counter.
+    public fn CryptBlock()
+    {
+        // Build the 16-byte counter block from nonce and counter fields.
+        var cb: byte[16]
+        state {
+            cb[0]  = this.nonce[0]
+            cb[1]  = this.nonce[1]
+            cb[2]  = this.nonce[2]
+            cb[3]  = this.nonce[3]
+            cb[4]  = this.nonce[4]
+            cb[5]  = this.nonce[5]
+            cb[6]  = this.nonce[6]
+            cb[7]  = this.nonce[7]
+            cb[8]  = this.nonce[8]
+            cb[9]  = this.nonce[9]
+            cb[10] = this.nonce[10]
+            cb[11] = this.nonce[11]
+            cb[12] = this.ctr12 as byte
+            cb[13] = this.ctr13 as byte
+            cb[14] = this.ctr14 as byte
+            cb[15] = this.ctr15 as byte
+        }
+
+        // Encrypt the counter block to produce the keystream.
+        this.enc.LoadBlock(cb)
+        this.enc.EncryptBlock()
+        var ks: byte[16] = this.enc.GetBlock()
+
+        // Read input block into locals.
+        var b0:  byte = this.blk[0]
+        var b1:  byte = this.blk[1]
+        var b2:  byte = this.blk[2]
+        var b3:  byte = this.blk[3]
+        var b4:  byte = this.blk[4]
+        var b5:  byte = this.blk[5]
+        var b6:  byte = this.blk[6]
+        var b7:  byte = this.blk[7]
+        var b8:  byte = this.blk[8]
+        var b9:  byte = this.blk[9]
+        var b10: byte = this.blk[10]
+        var b11: byte = this.blk[11]
+        var b12: byte = this.blk[12]
+        var b13: byte = this.blk[13]
+        var b14: byte = this.blk[14]
+        var b15: byte = this.blk[15]
+
+        // XOR input with keystream and write output in one cycle.
+        state {
+            this.outBlk[0]  = b0  ^ ks[0]
+            this.outBlk[1]  = b1  ^ ks[1]
+            this.outBlk[2]  = b2  ^ ks[2]
+            this.outBlk[3]  = b3  ^ ks[3]
+            this.outBlk[4]  = b4  ^ ks[4]
+            this.outBlk[5]  = b5  ^ ks[5]
+            this.outBlk[6]  = b6  ^ ks[6]
+            this.outBlk[7]  = b7  ^ ks[7]
+            this.outBlk[8]  = b8  ^ ks[8]
+            this.outBlk[9]  = b9  ^ ks[9]
+            this.outBlk[10] = b10 ^ ks[10]
+            this.outBlk[11] = b11 ^ ks[11]
+            this.outBlk[12] = b12 ^ ks[12]
+            this.outBlk[13] = b13 ^ ks[13]
+            this.outBlk[14] = b14 ^ ks[14]
+            this.outBlk[15] = b15 ^ ks[15]
+        }
+
+        // Increment the 32-bit counter (NIST Inc32, big-endian carry propagation).
+        this.IncrementCounter()
+    }
+
+    public fn GetBlock() byte[16]
+    {
+        return this.outBlk
+    }
+
+    public fn GetByte(idx: int) byte
+    {
+        return this.outBlk[idx]
+    }
+
+    public fn ClearKey()
+    {
+        this.enc.ClearKey()
+    }
+
+    // -----------------------------------------------------------------------
+    // Private helpers
+    // -----------------------------------------------------------------------
+
+    fn IncrementCounter()
+    {
+        var c12: int = this.ctr12
+        var c13: int = this.ctr13
+        var c14: int = this.ctr14
+        var c15: int = this.ctr15
+
+        c15 = c15 + 1
+        if (c15 == 256)
+        {
+            c15 = 0
+            c14 = c14 + 1
+            if (c14 == 256)
+            {
+                c14 = 0
+                c13 = c13 + 1
+                if (c13 == 256)
+                {
+                    c13 = 0
+                    c12 = c12 + 1
+                    if (c12 == 256)
+                    {
+                        c12 = 0
+                    }
+                }
+            }
+        }
+
+        this.ctr12 = c12
+        this.ctr13 = c13
+        this.ctr14 = c14
+        this.ctr15 = c15
+    }
+}

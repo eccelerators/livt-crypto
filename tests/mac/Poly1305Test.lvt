@@ -1,0 +1,130 @@
+namespace Livt.Crypto.Tests.Mac
+using Livt.Crypto.Mac
+
+
+@Test component Poly1305Test
+{
+    mac: Poly1305
+
+    new()
+    {
+        this.mac = new Poly1305()
+    }
+
+    // -----------------------------------------------------------------------
+    // RFC 8439 §2.5.2 test vector.
+    // key = 85d6be7857556d337f4452fe42d506a8 0103808afb0db2fd4abff6af4149f51b
+    // msg = "Cryptographic Forum Research Group" (34 bytes)
+    //   block1 = bytes 0..15   "Cryptographic Fo"
+    //   block2 = bytes 16..31  "rum Research Gro"
+    //   block3 = bytes 32..33  "up" + 14 zero bytes (partial block, caller pads)
+    // tag = a8061dc1305136c6c22b8baf0c0127a9
+    // -----------------------------------------------------------------------
+    @Test fn TestRfc8439Vector()
+    {
+        var key: byte[32]
+        key[0]=0x85; key[1]=0xd6; key[2]=0xbe; key[3]=0x78; key[4]=0x57; key[5]=0x55; key[6]=0x6d; key[7]=0x33
+        key[8]=0x7f; key[9]=0x44; key[10]=0x52; key[11]=0xfe; key[12]=0x42; key[13]=0xd5; key[14]=0x06; key[15]=0xa8
+        key[16]=0x01; key[17]=0x03; key[18]=0x80; key[19]=0x8a; key[20]=0xfb; key[21]=0x0d; key[22]=0xb2; key[23]=0xfd
+        key[24]=0x4a; key[25]=0xbf; key[26]=0xf6; key[27]=0xaf; key[28]=0x41; key[29]=0x49; key[30]=0xf5; key[31]=0x1b
+
+        this.mac.SetKey(key)
+
+        // Block 1: "Cryptographic Fo" (bytes 0..15)
+        var blk1: byte[16]
+        blk1[0]=0x43; blk1[1]=0x72; blk1[2]=0x79; blk1[3]=0x70; blk1[4]=0x74; blk1[5]=0x6f; blk1[6]=0x67; blk1[7]=0x72
+        blk1[8]=0x61; blk1[9]=0x70; blk1[10]=0x68; blk1[11]=0x69; blk1[12]=0x63; blk1[13]=0x20; blk1[14]=0x46; blk1[15]=0x6f
+        this.mac.ProcessBlock(blk1)
+
+        // Block 2: "rum Research Gro" (bytes 16..31)
+        var blk2: byte[16]
+        blk2[0]=0x72; blk2[1]=0x75; blk2[2]=0x6d; blk2[3]=0x20; blk2[4]=0x52; blk2[5]=0x65; blk2[6]=0x73; blk2[7]=0x65
+        blk2[8]=0x61; blk2[9]=0x72; blk2[10]=0x63; blk2[11]=0x68; blk2[12]=0x20; blk2[13]=0x47; blk2[14]=0x72; blk2[15]=0x6f
+        this.mac.ProcessBlock(blk2)
+
+        // Block 3: "up" + 14 zero bytes (partial final block, caller zero-pads)
+        var blk3: byte[16]
+        blk3[0]=0x75; blk3[1]=0x70; blk3[2]=0x00; blk3[3]=0x00; blk3[4]=0x00; blk3[5]=0x00; blk3[6]=0x00; blk3[7]=0x00
+        blk3[8]=0x00; blk3[9]=0x00; blk3[10]=0x00; blk3[11]=0x00; blk3[12]=0x00; blk3[13]=0x00; blk3[14]=0x00; blk3[15]=0x00
+        var blk3len: int = 2
+        this.mac.ProcessFinalBlock(blk3, blk3len)
+
+        this.mac.FinalizeTag()
+
+        assert this.mac.GetByte(0)  == 0xa8
+        assert this.mac.GetByte(1)  == 0x06
+        assert this.mac.GetByte(2)  == 0x1d
+        assert this.mac.GetByte(3)  == 0xc1
+        assert this.mac.GetByte(4)  == 0x30
+        assert this.mac.GetByte(5)  == 0x51
+        assert this.mac.GetByte(6)  == 0x36
+        assert this.mac.GetByte(7)  == 0xc6
+        assert this.mac.GetByte(8)  == 0xc2
+        assert this.mac.GetByte(9)  == 0x2b
+        assert this.mac.GetByte(10) == 0x8b
+        assert this.mac.GetByte(11) == 0xaf
+        assert this.mac.GetByte(12) == 0x0c
+        assert this.mac.GetByte(13) == 0x01
+        assert this.mac.GetByte(14) == 0x27
+        assert this.mac.GetByte(15) == 0xa9
+    }
+
+    // -----------------------------------------------------------------------
+    // All-zero key and single all-zero 16-byte block.
+    // r=0, s=0: acc = (0 + n) * 0 mod p = 0; tag = s = 0.
+    // -----------------------------------------------------------------------
+    @Test fn TestAllZeroKeyAndBlock()
+    {
+        var key: byte[32]
+        key[0]=0x00; key[1]=0x00; key[2]=0x00; key[3]=0x00; key[4]=0x00; key[5]=0x00; key[6]=0x00; key[7]=0x00
+        key[8]=0x00; key[9]=0x00; key[10]=0x00; key[11]=0x00; key[12]=0x00; key[13]=0x00; key[14]=0x00; key[15]=0x00
+        key[16]=0x00; key[17]=0x00; key[18]=0x00; key[19]=0x00; key[20]=0x00; key[21]=0x00; key[22]=0x00; key[23]=0x00
+        key[24]=0x00; key[25]=0x00; key[26]=0x00; key[27]=0x00; key[28]=0x00; key[29]=0x00; key[30]=0x00; key[31]=0x00
+
+        this.mac.SetKey(key)
+
+        var blk: byte[16]
+        blk[0]=0x00; blk[1]=0x00; blk[2]=0x00; blk[3]=0x00; blk[4]=0x00; blk[5]=0x00; blk[6]=0x00; blk[7]=0x00
+        blk[8]=0x00; blk[9]=0x00; blk[10]=0x00; blk[11]=0x00; blk[12]=0x00; blk[13]=0x00; blk[14]=0x00; blk[15]=0x00
+        this.mac.ProcessBlock(blk)
+        this.mac.FinalizeTag()
+
+        assert this.mac.GetByte(0)  == 0x00
+        assert this.mac.GetByte(1)  == 0x00
+        assert this.mac.GetByte(15) == 0x00
+    }
+
+    // -----------------------------------------------------------------------
+    // Determinism: calling SetKey + ProcessBlock + FinalizeTag twice with the
+    // same inputs must yield identical tags.
+    // -----------------------------------------------------------------------
+    @Test fn TestDeterminism()
+    {
+        var key: byte[32]
+        key[0]=0x85; key[1]=0xd6; key[2]=0xbe; key[3]=0x78; key[4]=0x57; key[5]=0x55; key[6]=0x6d; key[7]=0x33
+        key[8]=0x7f; key[9]=0x44; key[10]=0x52; key[11]=0xfe; key[12]=0x42; key[13]=0xd5; key[14]=0x06; key[15]=0xa8
+        key[16]=0x01; key[17]=0x03; key[18]=0x80; key[19]=0x8a; key[20]=0xfb; key[21]=0x0d; key[22]=0xb2; key[23]=0xfd
+        key[24]=0x4a; key[25]=0xbf; key[26]=0xf6; key[27]=0xaf; key[28]=0x41; key[29]=0x49; key[30]=0xf5; key[31]=0x1b
+
+        var blk1: byte[16]
+        blk1[0]=0x43; blk1[1]=0x72; blk1[2]=0x79; blk1[3]=0x70; blk1[4]=0x74; blk1[5]=0x6f; blk1[6]=0x67; blk1[7]=0x72
+        blk1[8]=0x61; blk1[9]=0x70; blk1[10]=0x68; blk1[11]=0x69; blk1[12]=0x63; blk1[13]=0x20; blk1[14]=0x46; blk1[15]=0x6f
+
+        // First run
+        this.mac.SetKey(key)
+        this.mac.ProcessBlock(blk1)
+        this.mac.FinalizeTag()
+        var t0: byte = this.mac.GetByte(0)
+        var t7: byte = this.mac.GetByte(7)
+        var t15: byte = this.mac.GetByte(15)
+
+        // Second run (SetKey resets accumulator)
+        this.mac.SetKey(key)
+        this.mac.ProcessBlock(blk1)
+        this.mac.FinalizeTag()
+
+        assert this.mac.GetByte(0)  == t0
+        assert this.mac.GetByte(7)  == t7
+        assert this.mac.GetByte(15) == t15
+    }
+}

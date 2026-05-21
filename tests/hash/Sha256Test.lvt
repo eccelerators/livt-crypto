@@ -1,0 +1,183 @@
+namespace Livt.Crypto.Tests.Hash
+using Livt.Crypto.Hash
+
+
+
+// Tests for Sha256 (NIST FIPS 180-4).
+@Test component Sha256Test
+{
+    sha: Sha256
+
+    new()
+    {
+        this.sha = new Sha256()
+    }
+
+    // NIST FIPS 180-4 Example 1: SHA-256("abc").
+    // Padded single block:
+    //   61 62 63 80  00..00  00 00 00 00  00 00 00 18
+    // Expected digest:
+    //   ba 78 16 bf  8f 01 cf ea  41 41 40 de  5d ae 22 23
+    //   b0 03 61 a3  96 17 7a 9c  b4 10 ff 61  f2 00 15 ad
+    @Test fn TestNistFips180Abc()
+    {
+        this.sha.Reset()
+
+        var blk: byte[64] = [
+            0x61, 0x62, 0x63, 0x80,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x18]
+        this.sha.ProcessBlock(blk)
+
+        var digest: byte[32] = this.sha.GetDigest()
+        assert digest[0]  == 0xba
+        assert digest[1]  == 0x78
+        assert digest[2]  == 0x16
+        assert digest[3]  == 0xbf
+        assert digest[4]  == 0x8f
+        assert digest[5]  == 0x01
+        assert digest[6]  == 0xcf
+        assert digest[7]  == 0xea
+        assert digest[8]  == 0x41
+        assert digest[9]  == 0x41
+        assert digest[10] == 0x40
+        assert digest[11] == 0xde
+        assert digest[12] == 0x5d
+        assert digest[13] == 0xae
+        assert digest[14] == 0x22
+        assert digest[15] == 0x23
+        assert digest[16] == 0xb0
+        assert digest[17] == 0x03
+        assert digest[18] == 0x61
+        assert digest[19] == 0xa3
+        assert digest[20] == 0x96
+        assert digest[21] == 0x17
+        assert digest[22] == 0x7a
+        assert digest[23] == 0x9c
+        assert digest[24] == 0xb4
+        assert digest[25] == 0x10
+        assert digest[26] == 0xff
+        assert digest[27] == 0x61
+        assert digest[28] == 0xf2
+        assert digest[29] == 0x00
+        assert digest[30] == 0x15
+        assert digest[31] == 0xad
+    }
+
+    // SHA-256 of the empty string.
+    // Padded single block:
+    //   80 00..00  00 00 00 00  00 00 00 00
+    // Expected digest:
+    //   e3 b0 c4 42  98 fc 1c 14  9a fb f4 c8  99 6f b9 24
+    //   27 ae 41 e4  64 9b 93 4c  a4 95 99 1b  78 52 b8 55
+    @Test fn TestEmptyString()
+    {
+        this.sha.Reset()
+
+        var blk: byte[64] = [
+            0x80, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00]
+        this.sha.ProcessBlock(blk)
+
+        var digest: byte[32] = this.sha.GetDigest()
+        assert digest[0]  == 0xe3
+        assert digest[1]  == 0xb0
+        assert digest[2]  == 0xc4
+        assert digest[3]  == 0x42
+        assert digest[4]  == 0x98
+        assert digest[5]  == 0xfc
+        assert digest[6]  == 0x1c
+        assert digest[7]  == 0x14
+        assert digest[8]  == 0x9a
+        assert digest[9]  == 0xfb
+        assert digest[10] == 0xf4
+        assert digest[11] == 0xc8
+        assert digest[12] == 0x99
+        assert digest[13] == 0x6f
+        assert digest[14] == 0xb9
+        assert digest[15] == 0x24
+        assert digest[16] == 0x27
+        assert digest[17] == 0xae
+        assert digest[18] == 0x41
+        assert digest[19] == 0xe4
+        assert digest[20] == 0x64
+        assert digest[21] == 0x9b
+        assert digest[22] == 0x93
+        assert digest[23] == 0x4c
+        assert digest[24] == 0xa4
+        assert digest[25] == 0x95
+        assert digest[26] == 0x99
+        assert digest[27] == 0x1b
+        assert digest[28] == 0x78
+        assert digest[29] == 0x52
+        assert digest[30] == 0xb8
+        assert digest[31] == 0x55
+    }
+
+    // Determinism: processing the same block twice from the same initial state
+    // produces the same digest.
+    @Test fn TestDeterminism()
+    {
+        this.sha.Reset()
+
+        var blk: byte[64] = [
+            0x61, 0x62, 0x63, 0x80,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x18]
+        this.sha.ProcessBlock(blk)
+        var digest1: byte[32] = this.sha.GetDigest()
+
+        this.sha.Reset()
+        this.sha.ProcessBlock(blk)
+        var digest2: byte[32] = this.sha.GetDigest()
+
+        assert digest1[0]  == digest2[0]
+        assert digest1[1]  == digest2[1]
+        assert digest1[2]  == digest2[2]
+        assert digest1[3]  == digest2[3]
+        assert digest1[4]  == digest2[4]
+        assert digest1[5]  == digest2[5]
+        assert digest1[6]  == digest2[6]
+        assert digest1[7]  == digest2[7]
+        assert digest1[8]  == digest2[8]
+        assert digest1[9]  == digest2[9]
+        assert digest1[10] == digest2[10]
+        assert digest1[11] == digest2[11]
+        assert digest1[12] == digest2[12]
+        assert digest1[13] == digest2[13]
+        assert digest1[14] == digest2[14]
+        assert digest1[15] == digest2[15]
+        assert digest1[16] == digest2[16]
+        assert digest1[17] == digest2[17]
+        assert digest1[18] == digest2[18]
+        assert digest1[19] == digest2[19]
+        assert digest1[20] == digest2[20]
+        assert digest1[21] == digest2[21]
+        assert digest1[22] == digest2[22]
+        assert digest1[23] == digest2[23]
+        assert digest1[24] == digest2[24]
+        assert digest1[25] == digest2[25]
+        assert digest1[26] == digest2[26]
+        assert digest1[27] == digest2[27]
+        assert digest1[28] == digest2[28]
+        assert digest1[29] == digest2[29]
+        assert digest1[30] == digest2[30]
+        assert digest1[31] == digest2[31]
+    }
+}

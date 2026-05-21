@@ -1,0 +1,162 @@
+namespace Livt.Crypto.Tests.Aes
+using Livt.Crypto.Aes
+
+
+
+// Tests for Cmac256 — NIST SP 800-38B vectors.
+// Key: 603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4
+@Test
+component AesCmac256Test
+{
+    cmac: Cmac256
+
+    new()
+    {
+        this.cmac = new Cmac256()
+    }
+
+    // -----------------------------------------------------------------------
+    // NIST SP 800-38B, AES-256, zero-length message.
+    // Input:  (empty)
+    // Padded: 80 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+    // Tag:    028962f61b7bf89efc6b551f4667d983
+    // -----------------------------------------------------------------------
+    @Test
+    fn TestNistEmptyMessage()
+    {
+        var key: byte[32] = [
+            0x60, 0x3d, 0xeb, 0x10, 0x15, 0xca, 0x71, 0xbe,
+            0x2b, 0x73, 0xae, 0xf0, 0x85, 0x7d, 0x77, 0x81,
+            0x1f, 0x35, 0x2c, 0x07, 0x3b, 0x61, 0x08, 0xd7,
+            0x2d, 0x98, 0x10, 0xa3, 0x09, 0x14, 0xdf, 0xf4]
+
+        var padded: byte[16] = [
+            0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+
+        this.cmac.SetKey(key)
+        this.cmac.Reset()
+        this.cmac.FinalizePaddedBlock(padded)
+
+        var tag: byte[16] = this.cmac.GetTag()
+        assert tag[0]  == 0x02
+        assert tag[1]  == 0x89
+        assert tag[2]  == 0x62
+        assert tag[3]  == 0xf6
+        assert tag[4]  == 0x1b
+        assert tag[5]  == 0x7b
+        assert tag[6]  == 0xf8
+        assert tag[7]  == 0x9e
+        assert tag[8]  == 0xfc
+        assert tag[9]  == 0x6b
+        assert tag[10] == 0x55
+        assert tag[11] == 0x1f
+        assert tag[12] == 0x46
+        assert tag[13] == 0x67
+        assert tag[14] == 0xd9
+        assert tag[15] == 0x83
+    }
+
+    // -----------------------------------------------------------------------
+    // NIST SP 800-38B, AES-256, one-block message.
+    // Message: 6bc1bee22e409f96e93d7e117393172a
+    // Tag:     28a7023f452e8f82bd4bf28d8c37c35c
+    // -----------------------------------------------------------------------
+    @Test
+    fn TestNistOneBlock()
+    {
+        var key: byte[32] = [
+            0x60, 0x3d, 0xeb, 0x10, 0x15, 0xca, 0x71, 0xbe,
+            0x2b, 0x73, 0xae, 0xf0, 0x85, 0x7d, 0x77, 0x81,
+            0x1f, 0x35, 0x2c, 0x07, 0x3b, 0x61, 0x08, 0xd7,
+            0x2d, 0x98, 0x10, 0xa3, 0x09, 0x14, 0xdf, 0xf4]
+
+        var msg: byte[16] = [
+            0x6b, 0xc1, 0xbe, 0xe2, 0x2e, 0x40, 0x9f, 0x96,
+            0xe9, 0x3d, 0x7e, 0x11, 0x73, 0x93, 0x17, 0x2a]
+
+        this.cmac.SetKey(key)
+        this.cmac.Reset()
+        this.cmac.FinalizeBlock(msg)
+
+        var tag: byte[16] = this.cmac.GetTag()
+        assert tag[0]  == 0x28
+        assert tag[1]  == 0xa7
+        assert tag[2]  == 0x02
+        assert tag[3]  == 0x3f
+        assert tag[4]  == 0x45
+        assert tag[5]  == 0x2e
+        assert tag[6]  == 0x8f
+        assert tag[7]  == 0x82
+        assert tag[8]  == 0xbd
+        assert tag[9]  == 0x4b
+        assert tag[10] == 0xf2
+        assert tag[11] == 0x8d
+        assert tag[12] == 0x8c
+        assert tag[13] == 0x37
+        assert tag[14] == 0xc3
+        assert tag[15] == 0x5c
+    }
+
+    // -----------------------------------------------------------------------
+    // Determinism: same key + message → identical tags on two consecutive runs.
+    // -----------------------------------------------------------------------
+    @Test
+    fn TestDeterminism()
+    {
+        var key: byte[32] = [
+            0x60, 0x3d, 0xeb, 0x10, 0x15, 0xca, 0x71, 0xbe,
+            0x2b, 0x73, 0xae, 0xf0, 0x85, 0x7d, 0x77, 0x81,
+            0x1f, 0x35, 0x2c, 0x07, 0x3b, 0x61, 0x08, 0xd7,
+            0x2d, 0x98, 0x10, 0xa3, 0x09, 0x14, 0xdf, 0xf4]
+
+        var msg: byte[16] = [
+            0x6b, 0xc1, 0xbe, 0xe2, 0x2e, 0x40, 0x9f, 0x96,
+            0xe9, 0x3d, 0x7e, 0x11, 0x73, 0x93, 0x17, 0x2a]
+
+        this.cmac.SetKey(key)
+
+        // First run.
+        this.cmac.Reset()
+        this.cmac.FinalizeBlock(msg)
+        var tag1: byte[16] = this.cmac.GetTag()
+        var t0:  byte = tag1[0]
+        var t1:  byte = tag1[1]
+        var t2:  byte = tag1[2]
+        var t3:  byte = tag1[3]
+        var t4:  byte = tag1[4]
+        var t5:  byte = tag1[5]
+        var t6:  byte = tag1[6]
+        var t7:  byte = tag1[7]
+        var t8:  byte = tag1[8]
+        var t9:  byte = tag1[9]
+        var t10: byte = tag1[10]
+        var t11: byte = tag1[11]
+        var t12: byte = tag1[12]
+        var t13: byte = tag1[13]
+        var t14: byte = tag1[14]
+        var t15: byte = tag1[15]
+
+        // Second run.
+        this.cmac.Reset()
+        this.cmac.FinalizeBlock(msg)
+        var tag2: byte[16] = this.cmac.GetTag()
+
+        assert tag2[0]  == t0
+        assert tag2[1]  == t1
+        assert tag2[2]  == t2
+        assert tag2[3]  == t3
+        assert tag2[4]  == t4
+        assert tag2[5]  == t5
+        assert tag2[6]  == t6
+        assert tag2[7]  == t7
+        assert tag2[8]  == t8
+        assert tag2[9]  == t9
+        assert tag2[10] == t10
+        assert tag2[11] == t11
+        assert tag2[12] == t12
+        assert tag2[13] == t13
+        assert tag2[14] == t14
+        assert tag2[15] == t15
+    }
+}

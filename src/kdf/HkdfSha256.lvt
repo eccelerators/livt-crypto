@@ -1,0 +1,79 @@
+namespace Livt.Crypto.Kdf
+using Livt.Crypto.Mac
+
+
+// HKDF-SHA-256 (RFC 5869) — single-block message model.
+//
+// HKDF has two stages:
+//   Extract: PRK = HMAC-SHA256(salt, IKM)
+//   Expand:  T(1) = HMAC-SHA256(PRK, info || 0x01)
+//            T(N) = HMAC-SHA256(PRK, T(N-1) || info || N)   for N >= 2
+//            OKM  = T(1) || T(2) || ... (truncated to L bytes)
+//
+// Caller responsibilities (single-block model):
+//   - salt is provided as a 32-byte key (zero-pad if shorter than 32 bytes;
+//     keys > 32 bytes should be SHA-256-hashed first).
+//   - All message blocks are SHA-256-padded 64-byte arrays.  The caller
+//     accounts for the 64-byte k_ipad block already consumed by Init().
+//     Total inner SHA-256 input = 64 (k_ipad) + len(message).
+//
+//   ikmBlock (64 B):
+//     IKM || 0x80 || zeros || be64((64 + len(IKM)) * 8)
+//
+//   t1Block (64 B):
+//     info || 0x01 || 0x80 || zeros || be64((64 + len(info) + 1) * 8)
+//
+//   tnBlock (64 B):
+//     T(N-1) || info || N || 0x80 || zeros || be64((64 + 32 + len(info) + 1) * 8)
+//     Constraint: len(info) <= 31 so that the full message fits in 64 bytes.
+component HkdfSha256
+{
+    public const PRK_SIZE:  int = 32
+    public const OKM_BLOCK: int = 32
+
+    hmac: HmacSha256
+
+    new()
+    {
+        this.hmac = new HmacSha256()
+    }
+
+    // -----------------------------------------------------------------------
+    // Public API
+    // -----------------------------------------------------------------------
+
+    // Extract: PRK = HMAC-SHA256(salt, ikmBlock)
+    // salt    — 32-byte key (zero-padded from the raw salt)
+    // ikmBlock — SHA-256-padded IKM (64 B); inner total = 64 + len(IKM) bytes
+    public fn Extract(salt: byte[32], ikmBlock: byte[64]) byte[32]
+    {
+        this.hmac.SetKey(salt)
+        this.hmac.Init()
+        this.hmac.ProcessBlock(ikmBlock)
+        return this.hmac.GetHmac()
+    }
+
+    // ExpandT1: T(1) = HMAC-SHA256(PRK, t1Block)
+    // prk     — 32-byte pseudorandom key from Extract
+    // t1Block — SHA-256-padded (info || 0x01) (64 B); inner total = 64 + len(info) + 1 bytes
+    public fn ExpandT1(prk: byte[32], t1Block: byte[64]) byte[32]
+    {
+        this.hmac.SetKey(prk)
+        this.hmac.Init()
+        this.hmac.ProcessBlock(t1Block)
+        return this.hmac.GetHmac()
+    }
+
+    // ExpandTN: T(N) = HMAC-SHA256(PRK, tnBlock) for N >= 2
+    // prk     — 32-byte pseudorandom key from Extract
+    // tnBlock — SHA-256-padded (T(N-1) || info || N) (64 B)
+    //           inner total = 64 + 32 + len(info) + 1 bytes
+    //           len(info) must be <= 31 so the message fits in 64 bytes.
+    public fn ExpandTN(prk: byte[32], tnBlock: byte[64]) byte[32]
+    {
+        this.hmac.SetKey(prk)
+        this.hmac.Init()
+        this.hmac.ProcessBlock(tnBlock)
+        return this.hmac.GetHmac()
+    }
+}

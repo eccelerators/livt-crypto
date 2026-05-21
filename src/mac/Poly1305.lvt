@@ -1,0 +1,1092 @@
+namespace Livt.Crypto.Mac
+
+// Poly1305 one-time MAC (RFC 8439 §2.5).
+//
+// Usage:
+//   1. SetKey(key[32])          -- must be called once per message; key is one-time
+//   2. ProcessBlock(block[16])  -- call once per 16-byte block (zero-pad the last)
+//   3. FinalizeTag()
+//   4. GetTag() byte[16]
+//
+// Notes:
+// - The caller is responsible for padding partial final blocks with zeros.
+// - The 130-bit accumulator is stored as 17 little-endian bytes (acc[0..16]).
+// - r is 16 bytes (clamped per RFC 8439 §2.5.1 before use).
+// - s is 16 bytes (added to the final accumulator value).
+// - Multiplication acc[17] × r[16] is carried out byte-by-byte into a 33-byte
+//   product buffer, then reduced mod 2^130-5.
+component Poly1305
+{
+
+    // Clamped r value: 16 bytes LE.
+    r: byte[16]
+    // s value: 16 bytes LE.
+    s: byte[16]
+    // 130-bit accumulator: 17 bytes LE (bit 128 in acc[16]).
+    acc: byte[17]
+    // 16-byte output tag.
+    tag: byte[16]
+
+    new()
+    {
+    }
+
+    // -----------------------------------------------------------------------
+    // Public API
+    // -----------------------------------------------------------------------
+
+    public fn SetKey(key: byte[32])
+    {
+        // Read r bytes, clamp, store.
+        var r0:  byte = key[0];  var r1:  byte = key[1];  var r2:  byte = key[2];  var r3:  byte = key[3]
+        var r4:  byte = key[4];  var r5:  byte = key[5];  var r6:  byte = key[6];  var r7:  byte = key[7]
+        var r8:  byte = key[8];  var r9:  byte = key[9];  var r10: byte = key[10]; var r11: byte = key[11]
+        var r12: byte = key[12]; var r13: byte = key[13]; var r14: byte = key[14]; var r15: byte = key[15]
+
+        // Clamp r per RFC 8439 §2.5.1:
+        //   r[3], r[7], r[11], r[15] &= 0x0f
+        //   r[4], r[8], r[12]        &= 0xfc
+        var ir3:  int = r3  as int; ir3  = ir3  % 16;           var r3c:  byte = ir3  as byte; r3  = r3c
+        var ir7:  int = r7  as int; ir7  = ir7  % 16;           var r7c:  byte = ir7  as byte; r7  = r7c
+        var ir11: int = r11 as int; ir11 = ir11 % 16;           var r11c: byte = ir11 as byte; r11 = r11c
+        var ir15: int = r15 as int; ir15 = ir15 % 16;           var r15c: byte = ir15 as byte; r15 = r15c
+        var ir4:  int = r4  as int; ir4  = (ir4  / 4) * 4;      var r4c:  byte = ir4  as byte; r4  = r4c
+        var ir8:  int = r8  as int; ir8  = (ir8  / 4) * 4;      var r8c:  byte = ir8  as byte; r8  = r8c
+        var ir12: int = r12 as int; ir12 = (ir12 / 4) * 4;      var r12c: byte = ir12 as byte; r12 = r12c
+
+        this.r[0]  = r0;  this.r[1]  = r1;  this.r[2]  = r2;  this.r[3]  = r3
+        this.r[4]  = r4;  this.r[5]  = r5;  this.r[6]  = r6;  this.r[7]  = r7
+        this.r[8]  = r8;  this.r[9]  = r9;  this.r[10] = r10; this.r[11] = r11
+        this.r[12] = r12; this.r[13] = r13; this.r[14] = r14; this.r[15] = r15
+
+        // Store s (key bytes 16..31).
+        var s0:  byte = key[16]; var s1:  byte = key[17]; var s2:  byte = key[18]; var s3:  byte = key[19]
+        var s4:  byte = key[20]; var s5:  byte = key[21]; var s6:  byte = key[22]; var s7:  byte = key[23]
+        var s8:  byte = key[24]; var s9:  byte = key[25]; var s10: byte = key[26]; var s11: byte = key[27]
+        var s12: byte = key[28]; var s13: byte = key[29]; var s14: byte = key[30]; var s15: byte = key[31]
+        this.s[0]  = s0;  this.s[1]  = s1;  this.s[2]  = s2;  this.s[3]  = s3
+        this.s[4]  = s4;  this.s[5]  = s5;  this.s[6]  = s6;  this.s[7]  = s7
+        this.s[8]  = s8;  this.s[9]  = s9;  this.s[10] = s10; this.s[11] = s11
+        this.s[12] = s12; this.s[13] = s13; this.s[14] = s14; this.s[15] = s15
+
+        // Zero the accumulator.
+        for (var i = 0; i < 17; i++)
+        {
+            this.acc[i] = 0x00
+        }
+    }
+
+    // ProcessBlock: absorb one 16-byte padded block.
+    // The caller must zero-pad partial blocks before calling.
+    // This appends the mandatory 0x01 high bit, adds to acc, multiplies by r,
+    // and reduces mod 2^130-5.
+    public fn ProcessBlock(blk: byte[16])
+    {
+        // ---------------------------------------------------------------
+        // Step 1: acc += n  where n = block || 0x01 as 17-byte LE number.
+        var a0:  int = this.acc[0]  as int
+        var a1:  int = this.acc[1]  as int
+        var a2:  int = this.acc[2]  as int
+        var a3:  int = this.acc[3]  as int
+        var a4:  int = this.acc[4]  as int
+        var a5:  int = this.acc[5]  as int
+        var a6:  int = this.acc[6]  as int
+        var a7:  int = this.acc[7]  as int
+        var a8:  int = this.acc[8]  as int
+        var a9:  int = this.acc[9]  as int
+        var a10: int = this.acc[10] as int
+        var a11: int = this.acc[11] as int
+        var a12: int = this.acc[12] as int
+        var a13: int = this.acc[13] as int
+        var a14: int = this.acc[14] as int
+        var a15: int = this.acc[15] as int
+        var a16: int = this.acc[16] as int
+
+        var b0:  byte = blk[0];  var b1:  byte = blk[1];  var b2:  byte = blk[2];  var b3:  byte = blk[3]
+        var b4:  byte = blk[4];  var b5:  byte = blk[5];  var b6:  byte = blk[6];  var b7:  byte = blk[7]
+        var b8:  byte = blk[8];  var b9:  byte = blk[9];  var b10: byte = blk[10]; var b11: byte = blk[11]
+        var b12: byte = blk[12]; var b13: byte = blk[13]; var b14: byte = blk[14]; var b15: byte = blk[15]
+
+        // Convert blk bytes to ints for arithmetic.
+        var b0i:  int = b0  as int; var b1i:  int = b1  as int; var b2i:  int = b2  as int; var b3i:  int = b3  as int
+        var b4i:  int = b4  as int; var b5i:  int = b5  as int; var b6i:  int = b6  as int; var b7i:  int = b7  as int
+        var b8i:  int = b8  as int; var b9i:  int = b9  as int; var b10i: int = b10 as int; var b11i: int = b11 as int
+        var b12i: int = b12 as int; var b13i: int = b13 as int; var b14i: int = b14 as int; var b15i: int = b15 as int
+
+        // Add blk bytes to acc bytes 0..15, with carry propagation.
+        var s0i: int = a0  + b0i;  var c0:  int = s0i  / 256; a0  = s0i  % 256
+        var s1i: int = a1  + b1i  + c0;  var c1:  int = s1i  / 256; a1  = s1i  % 256
+        var s2i: int = a2  + b2i  + c1;  var c2:  int = s2i  / 256; a2  = s2i  % 256
+        var s3i: int = a3  + b3i  + c2;  var c3:  int = s3i  / 256; a3  = s3i  % 256
+        var s4i: int = a4  + b4i  + c3;  var c4:  int = s4i  / 256; a4  = s4i  % 256
+        var s5i: int = a5  + b5i  + c4;  var c5:  int = s5i  / 256; a5  = s5i  % 256
+        var s6i: int = a6  + b6i  + c5;  var c6:  int = s6i  / 256; a6  = s6i  % 256
+        var s7i: int = a7  + b7i  + c6;  var c7:  int = s7i  / 256; a7  = s7i  % 256
+        var s8i: int = a8  + b8i  + c7;  var c8:  int = s8i  / 256; a8  = s8i  % 256
+        var s9i: int = a9  + b9i  + c8;  var c9:  int = s9i  / 256; a9  = s9i  % 256
+        var s10i: int = a10 + b10i + c9;  var c10: int = s10i / 256; a10 = s10i % 256
+        var s11i: int = a11 + b11i + c10; var c11: int = s11i / 256; a11 = s11i % 256
+        var s12i: int = a12 + b12i + c11; var c12: int = s12i / 256; a12 = s12i % 256
+        var s13i: int = a13 + b13i + c12; var c13: int = s13i / 256; a13 = s13i % 256
+        var s14i: int = a14 + b14i + c13; var c14: int = s14i / 256; a14 = s14i % 256
+        var s15i: int = a15 + b15i + c14; var c15: int = s15i / 256; a15 = s15i % 256
+        // acc[16] += 1 (the mandatory high bit) + carry from byte 15.
+        var s16i: int = a16 + 1 + c15; a16 = s16i % 256
+
+        // ---------------------------------------------------------------
+        // Step 2: acc = acc * r  (17-byte × 16-byte → 33-byte product, then reduce).
+        // ---------------------------------------------------------------
+        // Read r into ints.
+        var r0i:  int = this.r[0]  as int
+        var r1i:  int = this.r[1]  as int
+        var r2i:  int = this.r[2]  as int
+        var r3i:  int = this.r[3]  as int
+        var r4i:  int = this.r[4]  as int
+        var r5i:  int = this.r[5]  as int
+        var r6i:  int = this.r[6]  as int
+        var r7i:  int = this.r[7]  as int
+        var r8i:  int = this.r[8]  as int
+        var r9i:  int = this.r[9]  as int
+        var r10i: int = this.r[10] as int
+        var r11i: int = this.r[11] as int
+        var r12i: int = this.r[12] as int
+        var r13i: int = this.r[13] as int
+        var r14i: int = this.r[14] as int
+        var r15i: int = this.r[15] as int
+
+        // Compute the 33-byte product p[0..32].
+        // Each p[k] = sum of a[i]*r[j] where i+j=k.
+        // The range for i is 0..16, for j is 0..15.
+        // Each term ≤ 255*255 = 65025 (fits in int).
+        // Sum of up to 16 terms ≤ 16*65025 = 1040400 (fits in int).
+        // We accumulate carry during product computation via a local int[33].
+        // §5: local int array (not a field) — any loop style is fine.
+        var p: int[33]
+
+        // Initialize product array to zero.
+        p[0]=0; p[1]=0; p[2]=0; p[3]=0; p[4]=0; p[5]=0; p[6]=0; p[7]=0
+        p[8]=0; p[9]=0; p[10]=0; p[11]=0; p[12]=0; p[13]=0; p[14]=0; p[15]=0
+        p[16]=0; p[17]=0; p[18]=0; p[19]=0; p[20]=0; p[21]=0; p[22]=0; p[23]=0
+        p[24]=0; p[25]=0; p[26]=0; p[27]=0; p[28]=0; p[29]=0; p[30]=0; p[31]=0
+        p[32]=0
+
+        // Multiply each acc byte against each r byte (fully unrolled by acc byte).
+        // a0 row
+        p[0]  = p[0]  + a0 * r0i
+        p[1]  = p[1]  + a0 * r1i
+        p[2]  = p[2]  + a0 * r2i
+        p[3]  = p[3]  + a0 * r3i
+        p[4]  = p[4]  + a0 * r4i
+        p[5]  = p[5]  + a0 * r5i
+        p[6]  = p[6]  + a0 * r6i
+        p[7]  = p[7]  + a0 * r7i
+        p[8]  = p[8]  + a0 * r8i
+        p[9]  = p[9]  + a0 * r9i
+        p[10] = p[10] + a0 * r10i
+        p[11] = p[11] + a0 * r11i
+        p[12] = p[12] + a0 * r12i
+        p[13] = p[13] + a0 * r13i
+        p[14] = p[14] + a0 * r14i
+        p[15] = p[15] + a0 * r15i
+        // a1 row
+        p[1]  = p[1]  + a1 * r0i
+        p[2]  = p[2]  + a1 * r1i
+        p[3]  = p[3]  + a1 * r2i
+        p[4]  = p[4]  + a1 * r3i
+        p[5]  = p[5]  + a1 * r4i
+        p[6]  = p[6]  + a1 * r5i
+        p[7]  = p[7]  + a1 * r6i
+        p[8]  = p[8]  + a1 * r7i
+        p[9]  = p[9]  + a1 * r8i
+        p[10] = p[10] + a1 * r9i
+        p[11] = p[11] + a1 * r10i
+        p[12] = p[12] + a1 * r11i
+        p[13] = p[13] + a1 * r12i
+        p[14] = p[14] + a1 * r13i
+        p[15] = p[15] + a1 * r14i
+        p[16] = p[16] + a1 * r15i
+        // a2 row
+        p[2]  = p[2]  + a2 * r0i
+        p[3]  = p[3]  + a2 * r1i
+        p[4]  = p[4]  + a2 * r2i
+        p[5]  = p[5]  + a2 * r3i
+        p[6]  = p[6]  + a2 * r4i
+        p[7]  = p[7]  + a2 * r5i
+        p[8]  = p[8]  + a2 * r6i
+        p[9]  = p[9]  + a2 * r7i
+        p[10] = p[10] + a2 * r8i
+        p[11] = p[11] + a2 * r9i
+        p[12] = p[12] + a2 * r10i
+        p[13] = p[13] + a2 * r11i
+        p[14] = p[14] + a2 * r12i
+        p[15] = p[15] + a2 * r13i
+        p[16] = p[16] + a2 * r14i
+        p[17] = p[17] + a2 * r15i
+        // a3 row
+        p[3]  = p[3]  + a3 * r0i
+        p[4]  = p[4]  + a3 * r1i
+        p[5]  = p[5]  + a3 * r2i
+        p[6]  = p[6]  + a3 * r3i
+        p[7]  = p[7]  + a3 * r4i
+        p[8]  = p[8]  + a3 * r5i
+        p[9]  = p[9]  + a3 * r6i
+        p[10] = p[10] + a3 * r7i
+        p[11] = p[11] + a3 * r8i
+        p[12] = p[12] + a3 * r9i
+        p[13] = p[13] + a3 * r10i
+        p[14] = p[14] + a3 * r11i
+        p[15] = p[15] + a3 * r12i
+        p[16] = p[16] + a3 * r13i
+        p[17] = p[17] + a3 * r14i
+        p[18] = p[18] + a3 * r15i
+        // a4 row
+        p[4]  = p[4]  + a4 * r0i
+        p[5]  = p[5]  + a4 * r1i
+        p[6]  = p[6]  + a4 * r2i
+        p[7]  = p[7]  + a4 * r3i
+        p[8]  = p[8]  + a4 * r4i
+        p[9]  = p[9]  + a4 * r5i
+        p[10] = p[10] + a4 * r6i
+        p[11] = p[11] + a4 * r7i
+        p[12] = p[12] + a4 * r8i
+        p[13] = p[13] + a4 * r9i
+        p[14] = p[14] + a4 * r10i
+        p[15] = p[15] + a4 * r11i
+        p[16] = p[16] + a4 * r12i
+        p[17] = p[17] + a4 * r13i
+        p[18] = p[18] + a4 * r14i
+        p[19] = p[19] + a4 * r15i
+        // a5 row
+        p[5]  = p[5]  + a5 * r0i
+        p[6]  = p[6]  + a5 * r1i
+        p[7]  = p[7]  + a5 * r2i
+        p[8]  = p[8]  + a5 * r3i
+        p[9]  = p[9]  + a5 * r4i
+        p[10] = p[10] + a5 * r5i
+        p[11] = p[11] + a5 * r6i
+        p[12] = p[12] + a5 * r7i
+        p[13] = p[13] + a5 * r8i
+        p[14] = p[14] + a5 * r9i
+        p[15] = p[15] + a5 * r10i
+        p[16] = p[16] + a5 * r11i
+        p[17] = p[17] + a5 * r12i
+        p[18] = p[18] + a5 * r13i
+        p[19] = p[19] + a5 * r14i
+        p[20] = p[20] + a5 * r15i
+        // a6 row
+        p[6]  = p[6]  + a6 * r0i
+        p[7]  = p[7]  + a6 * r1i
+        p[8]  = p[8]  + a6 * r2i
+        p[9]  = p[9]  + a6 * r3i
+        p[10] = p[10] + a6 * r4i
+        p[11] = p[11] + a6 * r5i
+        p[12] = p[12] + a6 * r6i
+        p[13] = p[13] + a6 * r7i
+        p[14] = p[14] + a6 * r8i
+        p[15] = p[15] + a6 * r9i
+        p[16] = p[16] + a6 * r10i
+        p[17] = p[17] + a6 * r11i
+        p[18] = p[18] + a6 * r12i
+        p[19] = p[19] + a6 * r13i
+        p[20] = p[20] + a6 * r14i
+        p[21] = p[21] + a6 * r15i
+        // a7 row
+        p[7]  = p[7]  + a7 * r0i
+        p[8]  = p[8]  + a7 * r1i
+        p[9]  = p[9]  + a7 * r2i
+        p[10] = p[10] + a7 * r3i
+        p[11] = p[11] + a7 * r4i
+        p[12] = p[12] + a7 * r5i
+        p[13] = p[13] + a7 * r6i
+        p[14] = p[14] + a7 * r7i
+        p[15] = p[15] + a7 * r8i
+        p[16] = p[16] + a7 * r9i
+        p[17] = p[17] + a7 * r10i
+        p[18] = p[18] + a7 * r11i
+        p[19] = p[19] + a7 * r12i
+        p[20] = p[20] + a7 * r13i
+        p[21] = p[21] + a7 * r14i
+        p[22] = p[22] + a7 * r15i
+        // a8 row
+        p[8]  = p[8]  + a8 * r0i
+        p[9]  = p[9]  + a8 * r1i
+        p[10] = p[10] + a8 * r2i
+        p[11] = p[11] + a8 * r3i
+        p[12] = p[12] + a8 * r4i
+        p[13] = p[13] + a8 * r5i
+        p[14] = p[14] + a8 * r6i
+        p[15] = p[15] + a8 * r7i
+        p[16] = p[16] + a8 * r8i
+        p[17] = p[17] + a8 * r9i
+        p[18] = p[18] + a8 * r10i
+        p[19] = p[19] + a8 * r11i
+        p[20] = p[20] + a8 * r12i
+        p[21] = p[21] + a8 * r13i
+        p[22] = p[22] + a8 * r14i
+        p[23] = p[23] + a8 * r15i
+        // a9 row
+        p[9]  = p[9]  + a9 * r0i
+        p[10] = p[10] + a9 * r1i
+        p[11] = p[11] + a9 * r2i
+        p[12] = p[12] + a9 * r3i
+        p[13] = p[13] + a9 * r4i
+        p[14] = p[14] + a9 * r5i
+        p[15] = p[15] + a9 * r6i
+        p[16] = p[16] + a9 * r7i
+        p[17] = p[17] + a9 * r8i
+        p[18] = p[18] + a9 * r9i
+        p[19] = p[19] + a9 * r10i
+        p[20] = p[20] + a9 * r11i
+        p[21] = p[21] + a9 * r12i
+        p[22] = p[22] + a9 * r13i
+        p[23] = p[23] + a9 * r14i
+        p[24] = p[24] + a9 * r15i
+        // a10 row
+        p[10] = p[10] + a10 * r0i
+        p[11] = p[11] + a10 * r1i
+        p[12] = p[12] + a10 * r2i
+        p[13] = p[13] + a10 * r3i
+        p[14] = p[14] + a10 * r4i
+        p[15] = p[15] + a10 * r5i
+        p[16] = p[16] + a10 * r6i
+        p[17] = p[17] + a10 * r7i
+        p[18] = p[18] + a10 * r8i
+        p[19] = p[19] + a10 * r9i
+        p[20] = p[20] + a10 * r10i
+        p[21] = p[21] + a10 * r11i
+        p[22] = p[22] + a10 * r12i
+        p[23] = p[23] + a10 * r13i
+        p[24] = p[24] + a10 * r14i
+        p[25] = p[25] + a10 * r15i
+        // a11 row
+        p[11] = p[11] + a11 * r0i
+        p[12] = p[12] + a11 * r1i
+        p[13] = p[13] + a11 * r2i
+        p[14] = p[14] + a11 * r3i
+        p[15] = p[15] + a11 * r4i
+        p[16] = p[16] + a11 * r5i
+        p[17] = p[17] + a11 * r6i
+        p[18] = p[18] + a11 * r7i
+        p[19] = p[19] + a11 * r8i
+        p[20] = p[20] + a11 * r9i
+        p[21] = p[21] + a11 * r10i
+        p[22] = p[22] + a11 * r11i
+        p[23] = p[23] + a11 * r12i
+        p[24] = p[24] + a11 * r13i
+        p[25] = p[25] + a11 * r14i
+        p[26] = p[26] + a11 * r15i
+        // a12 row
+        p[12] = p[12] + a12 * r0i
+        p[13] = p[13] + a12 * r1i
+        p[14] = p[14] + a12 * r2i
+        p[15] = p[15] + a12 * r3i
+        p[16] = p[16] + a12 * r4i
+        p[17] = p[17] + a12 * r5i
+        p[18] = p[18] + a12 * r6i
+        p[19] = p[19] + a12 * r7i
+        p[20] = p[20] + a12 * r8i
+        p[21] = p[21] + a12 * r9i
+        p[22] = p[22] + a12 * r10i
+        p[23] = p[23] + a12 * r11i
+        p[24] = p[24] + a12 * r12i
+        p[25] = p[25] + a12 * r13i
+        p[26] = p[26] + a12 * r14i
+        p[27] = p[27] + a12 * r15i
+        // a13 row
+        p[13] = p[13] + a13 * r0i
+        p[14] = p[14] + a13 * r1i
+        p[15] = p[15] + a13 * r2i
+        p[16] = p[16] + a13 * r3i
+        p[17] = p[17] + a13 * r4i
+        p[18] = p[18] + a13 * r5i
+        p[19] = p[19] + a13 * r6i
+        p[20] = p[20] + a13 * r7i
+        p[21] = p[21] + a13 * r8i
+        p[22] = p[22] + a13 * r9i
+        p[23] = p[23] + a13 * r10i
+        p[24] = p[24] + a13 * r11i
+        p[25] = p[25] + a13 * r12i
+        p[26] = p[26] + a13 * r13i
+        p[27] = p[27] + a13 * r14i
+        p[28] = p[28] + a13 * r15i
+        // a14 row
+        p[14] = p[14] + a14 * r0i
+        p[15] = p[15] + a14 * r1i
+        p[16] = p[16] + a14 * r2i
+        p[17] = p[17] + a14 * r3i
+        p[18] = p[18] + a14 * r4i
+        p[19] = p[19] + a14 * r5i
+        p[20] = p[20] + a14 * r6i
+        p[21] = p[21] + a14 * r7i
+        p[22] = p[22] + a14 * r8i
+        p[23] = p[23] + a14 * r9i
+        p[24] = p[24] + a14 * r10i
+        p[25] = p[25] + a14 * r11i
+        p[26] = p[26] + a14 * r12i
+        p[27] = p[27] + a14 * r13i
+        p[28] = p[28] + a14 * r14i
+        p[29] = p[29] + a14 * r15i
+        // a15 row
+        p[15] = p[15] + a15 * r0i
+        p[16] = p[16] + a15 * r1i
+        p[17] = p[17] + a15 * r2i
+        p[18] = p[18] + a15 * r3i
+        p[19] = p[19] + a15 * r4i
+        p[20] = p[20] + a15 * r5i
+        p[21] = p[21] + a15 * r6i
+        p[22] = p[22] + a15 * r7i
+        p[23] = p[23] + a15 * r8i
+        p[24] = p[24] + a15 * r9i
+        p[25] = p[25] + a15 * r10i
+        p[26] = p[26] + a15 * r11i
+        p[27] = p[27] + a15 * r12i
+        p[28] = p[28] + a15 * r13i
+        p[29] = p[29] + a15 * r14i
+        p[30] = p[30] + a15 * r15i
+        // a16 row (high byte of acc, at most 1 after clamping through rounds)
+        p[16] = p[16] + a16 * r0i
+        p[17] = p[17] + a16 * r1i
+        p[18] = p[18] + a16 * r2i
+        p[19] = p[19] + a16 * r3i
+        p[20] = p[20] + a16 * r4i
+        p[21] = p[21] + a16 * r5i
+        p[22] = p[22] + a16 * r6i
+        p[23] = p[23] + a16 * r7i
+        p[24] = p[24] + a16 * r8i
+        p[25] = p[25] + a16 * r9i
+        p[26] = p[26] + a16 * r10i
+        p[27] = p[27] + a16 * r11i
+        p[28] = p[28] + a16 * r12i
+        p[29] = p[29] + a16 * r13i
+        p[30] = p[30] + a16 * r14i
+        p[31] = p[31] + a16 * r15i
+
+        // ---------------------------------------------------------------
+        // Step 3: Reduce mod 2^130-5.
+        //
+        // The 33-byte product represents a 264-bit number.
+        // We need it mod 2^130-5.
+        // 2^130-5 ≡ 0 (mod p) so 2^130 ≡ 5 (mod p).
+        // Thus bits >= 130 (i.e., bytes 17..32 in little-endian, 
+        // plus the upper 6 bits of byte 16) feed back with a factor of 5.
+        //
+        // Concretely: p[k] for k >= 17 maps to byte k-17 with factor 5 (from 2^136≡5*2^6).
+        // We handle this in two passes:
+        //   Pass A: fold p[17..32] back: p[k-17] += p[k] * 5 * 2^(8*(k-17))
+        //           But we use a simpler byte-level fold:
+        //           "high[j]" = the portion of the 264-bit number above bit 130.
+        //           Let hi_bytes = p[17..32] (the 128 bits above 2^136).
+        //           Let hi_bits  = bits 130..135 of p[16] = p[16] / 4.
+        //           2^130 ≡ 5 (mod p), so:
+        //             excess = hi_bits + hi_bytes * 2^6
+        //             new_acc = (p[0..16] mod 2^130) + excess * 5
+        //
+        // For implementation simplicity, use the standard approach:
+        //   1. Extract the 130-bit portion and the overflow.
+        //   2. Fold overflow × 5 back into the low 130 bits.
+        //   3. Repeat once (one fold is sufficient for a 264-bit input).
+        //
+        // Implementation:
+        //   overflow = (number of complete 2^130 blocks) = sum of (p[k]*256^k) >> 130
+        //   new_low  = sum mod 2^130
+        //   add overflow * 5 to new_low
+        //
+        // We work with the p[] array using carry propagation to get normalized bytes.
+        // ---------------------------------------------------------------
+
+        // First, propagate carries through p[0..32] to normalise to one byte per slot.
+        // p[i] can be large (up to ~1040400 before carry); after carry each is 0..255.
+        var ci: int = 0
+        var tmp: int
+
+        tmp = p[0]  + ci; p[0]  = tmp % 256; ci = tmp / 256
+        tmp = p[1]  + ci; p[1]  = tmp % 256; ci = tmp / 256
+        tmp = p[2]  + ci; p[2]  = tmp % 256; ci = tmp / 256
+        tmp = p[3]  + ci; p[3]  = tmp % 256; ci = tmp / 256
+        tmp = p[4]  + ci; p[4]  = tmp % 256; ci = tmp / 256
+        tmp = p[5]  + ci; p[5]  = tmp % 256; ci = tmp / 256
+        tmp = p[6]  + ci; p[6]  = tmp % 256; ci = tmp / 256
+        tmp = p[7]  + ci; p[7]  = tmp % 256; ci = tmp / 256
+        tmp = p[8]  + ci; p[8]  = tmp % 256; ci = tmp / 256
+        tmp = p[9]  + ci; p[9]  = tmp % 256; ci = tmp / 256
+        tmp = p[10] + ci; p[10] = tmp % 256; ci = tmp / 256
+        tmp = p[11] + ci; p[11] = tmp % 256; ci = tmp / 256
+        tmp = p[12] + ci; p[12] = tmp % 256; ci = tmp / 256
+        tmp = p[13] + ci; p[13] = tmp % 256; ci = tmp / 256
+        tmp = p[14] + ci; p[14] = tmp % 256; ci = tmp / 256
+        tmp = p[15] + ci; p[15] = tmp % 256; ci = tmp / 256
+        tmp = p[16] + ci; p[16] = tmp % 256; ci = tmp / 256
+        tmp = p[17] + ci; p[17] = tmp % 256; ci = tmp / 256
+        tmp = p[18] + ci; p[18] = tmp % 256; ci = tmp / 256
+        tmp = p[19] + ci; p[19] = tmp % 256; ci = tmp / 256
+        tmp = p[20] + ci; p[20] = tmp % 256; ci = tmp / 256
+        tmp = p[21] + ci; p[21] = tmp % 256; ci = tmp / 256
+        tmp = p[22] + ci; p[22] = tmp % 256; ci = tmp / 256
+        tmp = p[23] + ci; p[23] = tmp % 256; ci = tmp / 256
+        tmp = p[24] + ci; p[24] = tmp % 256; ci = tmp / 256
+        tmp = p[25] + ci; p[25] = tmp % 256; ci = tmp / 256
+        tmp = p[26] + ci; p[26] = tmp % 256; ci = tmp / 256
+        tmp = p[27] + ci; p[27] = tmp % 256; ci = tmp / 256
+        tmp = p[28] + ci; p[28] = tmp % 256; ci = tmp / 256
+        tmp = p[29] + ci; p[29] = tmp % 256; ci = tmp / 256
+        tmp = p[30] + ci; p[30] = tmp % 256; ci = tmp / 256
+        tmp = p[31] + ci; p[31] = tmp % 256; ci = tmp / 256
+        tmp = p[32] + ci; p[32] = tmp % 256
+
+        // Now reduce mod 2^130-5.
+        // The 264-bit product is stored in p[0..32].
+        //
+        // overflow = floor(product / 2^130).  Since 2^130 ≡ 5 (mod 2^130-5),
+        // the reduced value is (product mod 2^130) + overflow * 5.
+        //
+        // Byte i of overflow = (p[16+i] >> 2) | ((p[16+i+1] & 3) << 6)
+        //   = p[16+i]/4 + (p[16+i+1] % 4) * 64
+        // Each such value is 0..63+192 = 0..255, so no carry-normalise needed.
+        var ov0:  int = (p[16] / 4) + ((p[17] % 4) * 64)
+        var ov1:  int = (p[17] / 4) + ((p[18] % 4) * 64)
+        var ov2:  int = (p[18] / 4) + ((p[19] % 4) * 64)
+        var ov3:  int = (p[19] / 4) + ((p[20] % 4) * 64)
+        var ov4:  int = (p[20] / 4) + ((p[21] % 4) * 64)
+        var ov5:  int = (p[21] / 4) + ((p[22] % 4) * 64)
+        var ov6:  int = (p[22] / 4) + ((p[23] % 4) * 64)
+        var ov7:  int = (p[23] / 4) + ((p[24] % 4) * 64)
+        var ov8:  int = (p[24] / 4) + ((p[25] % 4) * 64)
+        var ov9:  int = (p[25] / 4) + ((p[26] % 4) * 64)
+        var ov10: int = (p[26] / 4) + ((p[27] % 4) * 64)
+        var ov11: int = (p[27] / 4) + ((p[28] % 4) * 64)
+        var ov12: int = (p[28] / 4) + ((p[29] % 4) * 64)
+        var ov13: int = (p[29] / 4) + ((p[30] % 4) * 64)
+        var ov14: int = (p[30] / 4) + ((p[31] % 4) * 64)
+        var ov15: int = (p[31] / 4) + ((p[32] % 4) * 64)
+        var ov16: int = p[32] / 4
+
+        // low130 = p[0..15] || (p[16] & 3)  (the 130 low bits of the product).
+        var lo0:  int = p[0]
+        var lo1:  int = p[1]
+        var lo2:  int = p[2]
+        var lo3:  int = p[3]
+        var lo4:  int = p[4]
+        var lo5:  int = p[5]
+        var lo6:  int = p[6]
+        var lo7:  int = p[7]
+        var lo8:  int = p[8]
+        var lo9:  int = p[9]
+        var lo10: int = p[10]
+        var lo11: int = p[11]
+        var lo12: int = p[12]
+        var lo13: int = p[13]
+        var lo14: int = p[14]
+        var lo15: int = p[15]
+        var lo16: int = p[16] % 4
+
+        // new_acc = low130 + overflow * 5.
+        // Add ov * 5 to lo (17-byte LE addition with carry).
+        // ov is at most 2^134/2^130 = 2^4 in magnitude, so ov*5 ≤ 5*16 = 80 bytes wide.
+        // Actually ov can be up to (2^264/2^130) = 2^134, but after carry normalisation
+        // ov fits in 17 bytes (ov16 ≤ 4 after carry). ov*5 fits in 17 bytes + tiny carry.
+
+        var f0:  int = lo0  + ov0  * 5
+        var f1:  int = lo1  + ov1  * 5
+        var f2:  int = lo2  + ov2  * 5
+        var f3:  int = lo3  + ov3  * 5
+        var f4:  int = lo4  + ov4  * 5
+        var f5:  int = lo5  + ov5  * 5
+        var f6:  int = lo6  + ov6  * 5
+        var f7:  int = lo7  + ov7  * 5
+        var f8:  int = lo8  + ov8  * 5
+        var f9:  int = lo9  + ov9  * 5
+        var f10: int = lo10 + ov10 * 5
+        var f11: int = lo11 + ov11 * 5
+        var f12: int = lo12 + ov12 * 5
+        var f13: int = lo13 + ov13 * 5
+        var f14: int = lo14 + ov14 * 5
+        var f15: int = lo15 + ov15 * 5
+        var f16: int = lo16 + ov16 * 5
+
+        // Carry-normalise f[].
+        f0  = f0  + 0; var cf0:  int = f0  / 256; f0  = f0  % 256
+        f1  = f1  + cf0;  var cf1:  int = f1  / 256; f1  = f1  % 256
+        f2  = f2  + cf1;  var cf2:  int = f2  / 256; f2  = f2  % 256
+        f3  = f3  + cf2;  var cf3:  int = f3  / 256; f3  = f3  % 256
+        f4  = f4  + cf3;  var cf4:  int = f4  / 256; f4  = f4  % 256
+        f5  = f5  + cf4;  var cf5:  int = f5  / 256; f5  = f5  % 256
+        f6  = f6  + cf5;  var cf6:  int = f6  / 256; f6  = f6  % 256
+        f7  = f7  + cf6;  var cf7:  int = f7  / 256; f7  = f7  % 256
+        f8  = f8  + cf7;  var cf8:  int = f8  / 256; f8  = f8  % 256
+        f9  = f9  + cf8;  var cf9:  int = f9  / 256; f9  = f9  % 256
+        f10 = f10 + cf9;  var cf10: int = f10 / 256; f10 = f10 % 256
+        f11 = f11 + cf10; var cf11: int = f11 / 256; f11 = f11 % 256
+        f12 = f12 + cf11; var cf12: int = f12 / 256; f12 = f12 % 256
+        f13 = f13 + cf12; var cf13: int = f13 / 256; f13 = f13 % 256
+        f14 = f14 + cf13; var cf14: int = f14 / 256; f14 = f14 % 256
+        f15 = f15 + cf14; var cf15: int = f15 / 256; f15 = f15 % 256
+        f16 = f16 + cf15; f16 = f16 % 256
+
+        // f[0..16] is the new accumulator (≤ 2 * (2^130-5), so may be ≥ 2^130-5).
+        // A second reduction fold handles this lazily; the second fold happens
+        // at FinalizeTag time (a second pass is sufficient per RFC 8439 §2.5.1).
+        // Store the result back to this.acc (via local byte vars per §10).
+        var acc0b:  byte = f0  as byte; var acc1b:  byte = f1  as byte
+        var acc2b:  byte = f2  as byte; var acc3b:  byte = f3  as byte
+        var acc4b:  byte = f4  as byte; var acc5b:  byte = f5  as byte
+        var acc6b:  byte = f6  as byte; var acc7b:  byte = f7  as byte
+        var acc8b:  byte = f8  as byte; var acc9b:  byte = f9  as byte
+        var acc10b: byte = f10 as byte; var acc11b: byte = f11 as byte
+        var acc12b: byte = f12 as byte; var acc13b: byte = f13 as byte
+        var acc14b: byte = f14 as byte; var acc15b: byte = f15 as byte
+        var acc16b: byte = f16 as byte
+        this.acc[0]  = acc0b;  this.acc[1]  = acc1b
+        this.acc[2]  = acc2b;  this.acc[3]  = acc3b
+        this.acc[4]  = acc4b;  this.acc[5]  = acc5b
+        this.acc[6]  = acc6b;  this.acc[7]  = acc7b
+        this.acc[8]  = acc8b;  this.acc[9]  = acc9b
+        this.acc[10] = acc10b; this.acc[11] = acc11b
+        this.acc[12] = acc12b; this.acc[13] = acc13b
+        this.acc[14] = acc14b; this.acc[15] = acc15b
+        this.acc[16] = acc16b
+    }
+
+    // ProcessFinalBlock: absorb a partial (or full) block where the 0x01 pad byte
+    // is placed at byte position `len` (0 < len <= 16).
+    // For full 16-byte blocks use ProcessBlock; for partial final blocks use this.
+    // The block must be zero-padded beyond `len` bytes before calling.
+    public fn ProcessFinalBlock(blk: byte[16], len: int)
+    {
+        // ---------------------------------------------------------------
+        // Step 1: acc += n  where n has bytes 0..len-1 from blk, byte len = 0x01.
+        // ---------------------------------------------------------------
+        var a0:  int = this.acc[0]  as int
+        var a1:  int = this.acc[1]  as int
+        var a2:  int = this.acc[2]  as int
+        var a3:  int = this.acc[3]  as int
+        var a4:  int = this.acc[4]  as int
+        var a5:  int = this.acc[5]  as int
+        var a6:  int = this.acc[6]  as int
+        var a7:  int = this.acc[7]  as int
+        var a8:  int = this.acc[8]  as int
+        var a9:  int = this.acc[9]  as int
+        var a10: int = this.acc[10] as int
+        var a11: int = this.acc[11] as int
+        var a12: int = this.acc[12] as int
+        var a13: int = this.acc[13] as int
+        var a14: int = this.acc[14] as int
+        var a15: int = this.acc[15] as int
+        var a16: int = this.acc[16] as int
+
+        var b0:  byte = blk[0];  var b1:  byte = blk[1];  var b2:  byte = blk[2];  var b3:  byte = blk[3]
+        var b4:  byte = blk[4];  var b5:  byte = blk[5];  var b6:  byte = blk[6];  var b7:  byte = blk[7]
+        var b8:  byte = blk[8];  var b9:  byte = blk[9];  var b10: byte = blk[10]; var b11: byte = blk[11]
+        var b12: byte = blk[12]; var b13: byte = blk[13]; var b14: byte = blk[14]; var b15: byte = blk[15]
+
+        var b0i:  int = b0  as int; var b1i:  int = b1  as int; var b2i:  int = b2  as int; var b3i:  int = b3  as int
+        var b4i:  int = b4  as int; var b5i:  int = b5  as int; var b6i:  int = b6  as int; var b7i:  int = b7  as int
+        var b8i:  int = b8  as int; var b9i:  int = b9  as int; var b10i: int = b10 as int; var b11i: int = b11 as int
+        var b12i: int = b12 as int; var b13i: int = b13 as int; var b14i: int = b14 as int; var b15i: int = b15 as int
+
+        var s0i: int = a0  + b0i;  var c0:  int = s0i  / 256; a0  = s0i  % 256
+        var s1i: int = a1  + b1i  + c0;  var c1:  int = s1i  / 256; a1  = s1i  % 256
+        var s2i: int = a2  + b2i  + c1;  var c2:  int = s2i  / 256; a2  = s2i  % 256
+        var s3i: int = a3  + b3i  + c2;  var c3:  int = s3i  / 256; a3  = s3i  % 256
+        var s4i: int = a4  + b4i  + c3;  var c4:  int = s4i  / 256; a4  = s4i  % 256
+        var s5i: int = a5  + b5i  + c4;  var c5:  int = s5i  / 256; a5  = s5i  % 256
+        var s6i: int = a6  + b6i  + c5;  var c6:  int = s6i  / 256; a6  = s6i  % 256
+        var s7i: int = a7  + b7i  + c6;  var c7:  int = s7i  / 256; a7  = s7i  % 256
+        var s8i: int = a8  + b8i  + c7;  var c8:  int = s8i  / 256; a8  = s8i  % 256
+        var s9i: int = a9  + b9i  + c8;  var c9:  int = s9i  / 256; a9  = s9i  % 256
+        var s10i: int = a10 + b10i + c9;  var c10: int = s10i / 256; a10 = s10i % 256
+        var s11i: int = a11 + b11i + c10; var c11: int = s11i / 256; a11 = s11i % 256
+        var s12i: int = a12 + b12i + c11; var c12: int = s12i / 256; a12 = s12i % 256
+        var s13i: int = a13 + b13i + c12; var c13: int = s13i / 256; a13 = s13i % 256
+        var s14i: int = a14 + b14i + c13; var c14: int = s14i / 256; a14 = s14i % 256
+        var s15i: int = a15 + b15i + c14; var c15: int = s15i / 256; a15 = s15i % 256
+        // Propagate carry into a16 (without the mandatory +1 of ProcessBlock).
+        var s16i: int = a16 + c15; a16 = s16i % 256
+
+        // Add 0x01 at byte position `len`.  len is in range 1..16.
+        // For len==16 this is the same as ProcessBlock (0x01 at byte 16).
+        if (len == 0)  { a0  = a0  + 1 }
+        if (len == 1)  { a1  = a1  + 1 }
+        if (len == 2)  { a2  = a2  + 1 }
+        if (len == 3)  { a3  = a3  + 1 }
+        if (len == 4)  { a4  = a4  + 1 }
+        if (len == 5)  { a5  = a5  + 1 }
+        if (len == 6)  { a6  = a6  + 1 }
+        if (len == 7)  { a7  = a7  + 1 }
+        if (len == 8)  { a8  = a8  + 1 }
+        if (len == 9)  { a9  = a9  + 1 }
+        if (len == 10) { a10 = a10 + 1 }
+        if (len == 11) { a11 = a11 + 1 }
+        if (len == 12) { a12 = a12 + 1 }
+        if (len == 13) { a13 = a13 + 1 }
+        if (len == 14) { a14 = a14 + 1 }
+        if (len == 15) { a15 = a15 + 1 }
+        if (len == 16) { a16 = a16 + 1 }
+
+        // Re-normalise: unconditional carry propagation for all bytes.
+        // Since at most one byte has +1 added, and bytes are already 0..255, at most one carry.
+        var carry: int = a0  / 256; a0  = a0  % 256
+        var tmp1:  int = a1  + carry; carry = tmp1  / 256; a1  = tmp1  % 256
+        var tmp2:  int = a2  + carry; carry = tmp2  / 256; a2  = tmp2  % 256
+        var tmp3:  int = a3  + carry; carry = tmp3  / 256; a3  = tmp3  % 256
+        var tmp4:  int = a4  + carry; carry = tmp4  / 256; a4  = tmp4  % 256
+        var tmp5:  int = a5  + carry; carry = tmp5  / 256; a5  = tmp5  % 256
+        var tmp6:  int = a6  + carry; carry = tmp6  / 256; a6  = tmp6  % 256
+        var tmp7:  int = a7  + carry; carry = tmp7  / 256; a7  = tmp7  % 256
+        var tmp8:  int = a8  + carry; carry = tmp8  / 256; a8  = tmp8  % 256
+        var tmp9:  int = a9  + carry; carry = tmp9  / 256; a9  = tmp9  % 256
+        var tmp10: int = a10 + carry; carry = tmp10 / 256; a10 = tmp10 % 256
+        var tmp11: int = a11 + carry; carry = tmp11 / 256; a11 = tmp11 % 256
+        var tmp12: int = a12 + carry; carry = tmp12 / 256; a12 = tmp12 % 256
+        var tmp13: int = a13 + carry; carry = tmp13 / 256; a13 = tmp13 % 256
+        var tmp14: int = a14 + carry; carry = tmp14 / 256; a14 = tmp14 % 256
+        var tmp15: int = a15 + carry; carry = tmp15 / 256; a15 = tmp15 % 256
+        var tmp16: int = a16 + carry; a16 = tmp16 % 256
+
+        // ---------------------------------------------------------------
+        // Step 2: acc = acc * r mod 2^130-5  (same as ProcessBlock).
+        // ---------------------------------------------------------------
+        var r0i:  int = this.r[0]  as int
+        var r1i:  int = this.r[1]  as int
+        var r2i:  int = this.r[2]  as int
+        var r3i:  int = this.r[3]  as int
+        var r4i:  int = this.r[4]  as int
+        var r5i:  int = this.r[5]  as int
+        var r6i:  int = this.r[6]  as int
+        var r7i:  int = this.r[7]  as int
+        var r8i:  int = this.r[8]  as int
+        var r9i:  int = this.r[9]  as int
+        var r10i: int = this.r[10] as int
+        var r11i: int = this.r[11] as int
+        var r12i: int = this.r[12] as int
+        var r13i: int = this.r[13] as int
+        var r14i: int = this.r[14] as int
+        var r15i: int = this.r[15] as int
+
+        var pf: int[33]
+        pf[0]=0; pf[1]=0; pf[2]=0; pf[3]=0; pf[4]=0; pf[5]=0; pf[6]=0; pf[7]=0
+        pf[8]=0; pf[9]=0; pf[10]=0; pf[11]=0; pf[12]=0; pf[13]=0; pf[14]=0; pf[15]=0
+        pf[16]=0; pf[17]=0; pf[18]=0; pf[19]=0; pf[20]=0; pf[21]=0; pf[22]=0; pf[23]=0
+        pf[24]=0; pf[25]=0; pf[26]=0; pf[27]=0; pf[28]=0; pf[29]=0; pf[30]=0; pf[31]=0
+        pf[32]=0
+
+        pf[0] = pf[0] + a0 * r0i;  pf[1] = pf[1] + a0 * r1i;  pf[2] = pf[2] + a0 * r2i;  pf[3] = pf[3] + a0 * r3i
+        pf[4] = pf[4] + a0 * r4i;  pf[5] = pf[5] + a0 * r5i;  pf[6] = pf[6] + a0 * r6i;  pf[7] = pf[7] + a0 * r7i
+        pf[8] = pf[8] + a0 * r8i;  pf[9] = pf[9] + a0 * r9i;  pf[10] = pf[10] + a0 * r10i; pf[11] = pf[11] + a0 * r11i
+        pf[12] = pf[12] + a0 * r12i; pf[13] = pf[13] + a0 * r13i; pf[14] = pf[14] + a0 * r14i; pf[15] = pf[15] + a0 * r15i
+        pf[1] = pf[1] + a1 * r0i;  pf[2] = pf[2] + a1 * r1i;  pf[3] = pf[3] + a1 * r2i;  pf[4] = pf[4] + a1 * r3i
+        pf[5] = pf[5] + a1 * r4i;  pf[6] = pf[6] + a1 * r5i;  pf[7] = pf[7] + a1 * r6i;  pf[8] = pf[8] + a1 * r7i
+        pf[9] = pf[9] + a1 * r8i;  pf[10] = pf[10] + a1 * r9i;  pf[11] = pf[11] + a1 * r10i; pf[12] = pf[12] + a1 * r11i
+        pf[13] = pf[13] + a1 * r12i; pf[14] = pf[14] + a1 * r13i; pf[15] = pf[15] + a1 * r14i; pf[16] = pf[16] + a1 * r15i
+        pf[2] = pf[2] + a2 * r0i;  pf[3] = pf[3] + a2 * r1i;  pf[4] = pf[4] + a2 * r2i;  pf[5] = pf[5] + a2 * r3i
+        pf[6] = pf[6] + a2 * r4i;  pf[7] = pf[7] + a2 * r5i;  pf[8] = pf[8] + a2 * r6i;  pf[9] = pf[9] + a2 * r7i
+        pf[10] = pf[10] + a2 * r8i;  pf[11] = pf[11] + a2 * r9i;  pf[12] = pf[12] + a2 * r10i; pf[13] = pf[13] + a2 * r11i
+        pf[14] = pf[14] + a2 * r12i; pf[15] = pf[15] + a2 * r13i; pf[16] = pf[16] + a2 * r14i; pf[17] = pf[17] + a2 * r15i
+        pf[3] = pf[3] + a3 * r0i;  pf[4] = pf[4] + a3 * r1i;  pf[5] = pf[5] + a3 * r2i;  pf[6] = pf[6] + a3 * r3i
+        pf[7] = pf[7] + a3 * r4i;  pf[8] = pf[8] + a3 * r5i;  pf[9] = pf[9] + a3 * r6i;  pf[10] = pf[10] + a3 * r7i
+        pf[11] = pf[11] + a3 * r8i;  pf[12] = pf[12] + a3 * r9i;  pf[13] = pf[13] + a3 * r10i; pf[14] = pf[14] + a3 * r11i
+        pf[15] = pf[15] + a3 * r12i; pf[16] = pf[16] + a3 * r13i; pf[17] = pf[17] + a3 * r14i; pf[18] = pf[18] + a3 * r15i
+        pf[4] = pf[4] + a4 * r0i;  pf[5] = pf[5] + a4 * r1i;  pf[6] = pf[6] + a4 * r2i;  pf[7] = pf[7] + a4 * r3i
+        pf[8] = pf[8] + a4 * r4i;  pf[9] = pf[9] + a4 * r5i;  pf[10] = pf[10] + a4 * r6i;  pf[11] = pf[11] + a4 * r7i
+        pf[12] = pf[12] + a4 * r8i;  pf[13] = pf[13] + a4 * r9i;  pf[14] = pf[14] + a4 * r10i; pf[15] = pf[15] + a4 * r11i
+        pf[16] = pf[16] + a4 * r12i; pf[17] = pf[17] + a4 * r13i; pf[18] = pf[18] + a4 * r14i; pf[19] = pf[19] + a4 * r15i
+        pf[5] = pf[5] + a5 * r0i;  pf[6] = pf[6] + a5 * r1i;  pf[7] = pf[7] + a5 * r2i;  pf[8] = pf[8] + a5 * r3i
+        pf[9] = pf[9] + a5 * r4i;  pf[10] = pf[10] + a5 * r5i;  pf[11] = pf[11] + a5 * r6i;  pf[12] = pf[12] + a5 * r7i
+        pf[13] = pf[13] + a5 * r8i;  pf[14] = pf[14] + a5 * r9i;  pf[15] = pf[15] + a5 * r10i; pf[16] = pf[16] + a5 * r11i
+        pf[17] = pf[17] + a5 * r12i; pf[18] = pf[18] + a5 * r13i; pf[19] = pf[19] + a5 * r14i; pf[20] = pf[20] + a5 * r15i
+        pf[6] = pf[6] + a6 * r0i;  pf[7] = pf[7] + a6 * r1i;  pf[8] = pf[8] + a6 * r2i;  pf[9] = pf[9] + a6 * r3i
+        pf[10] = pf[10] + a6 * r4i;  pf[11] = pf[11] + a6 * r5i;  pf[12] = pf[12] + a6 * r6i;  pf[13] = pf[13] + a6 * r7i
+        pf[14] = pf[14] + a6 * r8i;  pf[15] = pf[15] + a6 * r9i;  pf[16] = pf[16] + a6 * r10i; pf[17] = pf[17] + a6 * r11i
+        pf[18] = pf[18] + a6 * r12i; pf[19] = pf[19] + a6 * r13i; pf[20] = pf[20] + a6 * r14i; pf[21] = pf[21] + a6 * r15i
+        pf[7] = pf[7] + a7 * r0i;  pf[8] = pf[8] + a7 * r1i;  pf[9] = pf[9] + a7 * r2i;  pf[10] = pf[10] + a7 * r3i
+        pf[11] = pf[11] + a7 * r4i;  pf[12] = pf[12] + a7 * r5i;  pf[13] = pf[13] + a7 * r6i;  pf[14] = pf[14] + a7 * r7i
+        pf[15] = pf[15] + a7 * r8i;  pf[16] = pf[16] + a7 * r9i;  pf[17] = pf[17] + a7 * r10i; pf[18] = pf[18] + a7 * r11i
+        pf[19] = pf[19] + a7 * r12i; pf[20] = pf[20] + a7 * r13i; pf[21] = pf[21] + a7 * r14i; pf[22] = pf[22] + a7 * r15i
+        pf[8] = pf[8] + a8 * r0i;  pf[9] = pf[9] + a8 * r1i;  pf[10] = pf[10] + a8 * r2i;  pf[11] = pf[11] + a8 * r3i
+        pf[12] = pf[12] + a8 * r4i;  pf[13] = pf[13] + a8 * r5i;  pf[14] = pf[14] + a8 * r6i;  pf[15] = pf[15] + a8 * r7i
+        pf[16] = pf[16] + a8 * r8i;  pf[17] = pf[17] + a8 * r9i;  pf[18] = pf[18] + a8 * r10i; pf[19] = pf[19] + a8 * r11i
+        pf[20] = pf[20] + a8 * r12i; pf[21] = pf[21] + a8 * r13i; pf[22] = pf[22] + a8 * r14i; pf[23] = pf[23] + a8 * r15i
+        pf[9] = pf[9] + a9 * r0i;  pf[10] = pf[10] + a9 * r1i;  pf[11] = pf[11] + a9 * r2i;  pf[12] = pf[12] + a9 * r3i
+        pf[13] = pf[13] + a9 * r4i;  pf[14] = pf[14] + a9 * r5i;  pf[15] = pf[15] + a9 * r6i;  pf[16] = pf[16] + a9 * r7i
+        pf[17] = pf[17] + a9 * r8i;  pf[18] = pf[18] + a9 * r9i;  pf[19] = pf[19] + a9 * r10i; pf[20] = pf[20] + a9 * r11i
+        pf[21] = pf[21] + a9 * r12i; pf[22] = pf[22] + a9 * r13i; pf[23] = pf[23] + a9 * r14i; pf[24] = pf[24] + a9 * r15i
+        pf[10] = pf[10] + a10 * r0i; pf[11] = pf[11] + a10 * r1i; pf[12] = pf[12] + a10 * r2i; pf[13] = pf[13] + a10 * r3i
+        pf[14] = pf[14] + a10 * r4i; pf[15] = pf[15] + a10 * r5i; pf[16] = pf[16] + a10 * r6i; pf[17] = pf[17] + a10 * r7i
+        pf[18] = pf[18] + a10 * r8i; pf[19] = pf[19] + a10 * r9i; pf[20] = pf[20] + a10 * r10i; pf[21] = pf[21] + a10 * r11i
+        pf[22] = pf[22] + a10 * r12i; pf[23] = pf[23] + a10 * r13i; pf[24] = pf[24] + a10 * r14i; pf[25] = pf[25] + a10 * r15i
+        pf[11] = pf[11] + a11 * r0i; pf[12] = pf[12] + a11 * r1i; pf[13] = pf[13] + a11 * r2i; pf[14] = pf[14] + a11 * r3i
+        pf[15] = pf[15] + a11 * r4i; pf[16] = pf[16] + a11 * r5i; pf[17] = pf[17] + a11 * r6i; pf[18] = pf[18] + a11 * r7i
+        pf[19] = pf[19] + a11 * r8i; pf[20] = pf[20] + a11 * r9i; pf[21] = pf[21] + a11 * r10i; pf[22] = pf[22] + a11 * r11i
+        pf[23] = pf[23] + a11 * r12i; pf[24] = pf[24] + a11 * r13i; pf[25] = pf[25] + a11 * r14i; pf[26] = pf[26] + a11 * r15i
+        pf[12] = pf[12] + a12 * r0i; pf[13] = pf[13] + a12 * r1i; pf[14] = pf[14] + a12 * r2i; pf[15] = pf[15] + a12 * r3i
+        pf[16] = pf[16] + a12 * r4i; pf[17] = pf[17] + a12 * r5i; pf[18] = pf[18] + a12 * r6i; pf[19] = pf[19] + a12 * r7i
+        pf[20] = pf[20] + a12 * r8i; pf[21] = pf[21] + a12 * r9i; pf[22] = pf[22] + a12 * r10i; pf[23] = pf[23] + a12 * r11i
+        pf[24] = pf[24] + a12 * r12i; pf[25] = pf[25] + a12 * r13i; pf[26] = pf[26] + a12 * r14i; pf[27] = pf[27] + a12 * r15i
+        pf[13] = pf[13] + a13 * r0i; pf[14] = pf[14] + a13 * r1i; pf[15] = pf[15] + a13 * r2i; pf[16] = pf[16] + a13 * r3i
+        pf[17] = pf[17] + a13 * r4i; pf[18] = pf[18] + a13 * r5i; pf[19] = pf[19] + a13 * r6i; pf[20] = pf[20] + a13 * r7i
+        pf[21] = pf[21] + a13 * r8i; pf[22] = pf[22] + a13 * r9i; pf[23] = pf[23] + a13 * r10i; pf[24] = pf[24] + a13 * r11i
+        pf[25] = pf[25] + a13 * r12i; pf[26] = pf[26] + a13 * r13i; pf[27] = pf[27] + a13 * r14i; pf[28] = pf[28] + a13 * r15i
+        pf[14] = pf[14] + a14 * r0i; pf[15] = pf[15] + a14 * r1i; pf[16] = pf[16] + a14 * r2i; pf[17] = pf[17] + a14 * r3i
+        pf[18] = pf[18] + a14 * r4i; pf[19] = pf[19] + a14 * r5i; pf[20] = pf[20] + a14 * r6i; pf[21] = pf[21] + a14 * r7i
+        pf[22] = pf[22] + a14 * r8i; pf[23] = pf[23] + a14 * r9i; pf[24] = pf[24] + a14 * r10i; pf[25] = pf[25] + a14 * r11i
+        pf[26] = pf[26] + a14 * r12i; pf[27] = pf[27] + a14 * r13i; pf[28] = pf[28] + a14 * r14i; pf[29] = pf[29] + a14 * r15i
+        pf[15] = pf[15] + a15 * r0i; pf[16] = pf[16] + a15 * r1i; pf[17] = pf[17] + a15 * r2i; pf[18] = pf[18] + a15 * r3i
+        pf[19] = pf[19] + a15 * r4i; pf[20] = pf[20] + a15 * r5i; pf[21] = pf[21] + a15 * r6i; pf[22] = pf[22] + a15 * r7i
+        pf[23] = pf[23] + a15 * r8i; pf[24] = pf[24] + a15 * r9i; pf[25] = pf[25] + a15 * r10i; pf[26] = pf[26] + a15 * r11i
+        pf[27] = pf[27] + a15 * r12i; pf[28] = pf[28] + a15 * r13i; pf[29] = pf[29] + a15 * r14i; pf[30] = pf[30] + a15 * r15i
+        pf[16] = pf[16] + a16 * r0i; pf[17] = pf[17] + a16 * r1i; pf[18] = pf[18] + a16 * r2i; pf[19] = pf[19] + a16 * r3i
+        pf[20] = pf[20] + a16 * r4i; pf[21] = pf[21] + a16 * r5i; pf[22] = pf[22] + a16 * r6i; pf[23] = pf[23] + a16 * r7i
+        pf[24] = pf[24] + a16 * r8i; pf[25] = pf[25] + a16 * r9i; pf[26] = pf[26] + a16 * r10i; pf[27] = pf[27] + a16 * r11i
+        pf[28] = pf[28] + a16 * r12i; pf[29] = pf[29] + a16 * r13i; pf[30] = pf[30] + a16 * r14i; pf[31] = pf[31] + a16 * r15i
+
+        var cif: int = 0
+        var tmpf: int
+
+        tmpf = pf[0]  + cif; pf[0]  = tmpf % 256; cif = tmpf / 256
+        tmpf = pf[1]  + cif; pf[1]  = tmpf % 256; cif = tmpf / 256
+        tmpf = pf[2]  + cif; pf[2]  = tmpf % 256; cif = tmpf / 256
+        tmpf = pf[3]  + cif; pf[3]  = tmpf % 256; cif = tmpf / 256
+        tmpf = pf[4]  + cif; pf[4]  = tmpf % 256; cif = tmpf / 256
+        tmpf = pf[5]  + cif; pf[5]  = tmpf % 256; cif = tmpf / 256
+        tmpf = pf[6]  + cif; pf[6]  = tmpf % 256; cif = tmpf / 256
+        tmpf = pf[7]  + cif; pf[7]  = tmpf % 256; cif = tmpf / 256
+        tmpf = pf[8]  + cif; pf[8]  = tmpf % 256; cif = tmpf / 256
+        tmpf = pf[9]  + cif; pf[9]  = tmpf % 256; cif = tmpf / 256
+        tmpf = pf[10] + cif; pf[10] = tmpf % 256; cif = tmpf / 256
+        tmpf = pf[11] + cif; pf[11] = tmpf % 256; cif = tmpf / 256
+        tmpf = pf[12] + cif; pf[12] = tmpf % 256; cif = tmpf / 256
+        tmpf = pf[13] + cif; pf[13] = tmpf % 256; cif = tmpf / 256
+        tmpf = pf[14] + cif; pf[14] = tmpf % 256; cif = tmpf / 256
+        tmpf = pf[15] + cif; pf[15] = tmpf % 256; cif = tmpf / 256
+        tmpf = pf[16] + cif; pf[16] = tmpf % 256; cif = tmpf / 256
+        tmpf = pf[17] + cif; pf[17] = tmpf % 256; cif = tmpf / 256
+        tmpf = pf[18] + cif; pf[18] = tmpf % 256; cif = tmpf / 256
+        tmpf = pf[19] + cif; pf[19] = tmpf % 256; cif = tmpf / 256
+        tmpf = pf[20] + cif; pf[20] = tmpf % 256; cif = tmpf / 256
+        tmpf = pf[21] + cif; pf[21] = tmpf % 256; cif = tmpf / 256
+        tmpf = pf[22] + cif; pf[22] = tmpf % 256; cif = tmpf / 256
+        tmpf = pf[23] + cif; pf[23] = tmpf % 256; cif = tmpf / 256
+        tmpf = pf[24] + cif; pf[24] = tmpf % 256; cif = tmpf / 256
+        tmpf = pf[25] + cif; pf[25] = tmpf % 256; cif = tmpf / 256
+        tmpf = pf[26] + cif; pf[26] = tmpf % 256; cif = tmpf / 256
+        tmpf = pf[27] + cif; pf[27] = tmpf % 256; cif = tmpf / 256
+        tmpf = pf[28] + cif; pf[28] = tmpf % 256; cif = tmpf / 256
+        tmpf = pf[29] + cif; pf[29] = tmpf % 256; cif = tmpf / 256
+        tmpf = pf[30] + cif; pf[30] = tmpf % 256; cif = tmpf / 256
+        tmpf = pf[31] + cif; pf[31] = tmpf % 256; cif = tmpf / 256
+        tmpf = pf[32] + cif; pf[32] = tmpf % 256
+
+        var ovf0:  int = (pf[16] / 4) + ((pf[17] % 4) * 64)
+        var ovf1:  int = (pf[17] / 4) + ((pf[18] % 4) * 64)
+        var ovf2:  int = (pf[18] / 4) + ((pf[19] % 4) * 64)
+        var ovf3:  int = (pf[19] / 4) + ((pf[20] % 4) * 64)
+        var ovf4:  int = (pf[20] / 4) + ((pf[21] % 4) * 64)
+        var ovf5:  int = (pf[21] / 4) + ((pf[22] % 4) * 64)
+        var ovf6:  int = (pf[22] / 4) + ((pf[23] % 4) * 64)
+        var ovf7:  int = (pf[23] / 4) + ((pf[24] % 4) * 64)
+        var ovf8:  int = (pf[24] / 4) + ((pf[25] % 4) * 64)
+        var ovf9:  int = (pf[25] / 4) + ((pf[26] % 4) * 64)
+        var ovf10: int = (pf[26] / 4) + ((pf[27] % 4) * 64)
+        var ovf11: int = (pf[27] / 4) + ((pf[28] % 4) * 64)
+        var ovf12: int = (pf[28] / 4) + ((pf[29] % 4) * 64)
+        var ovf13: int = (pf[29] / 4) + ((pf[30] % 4) * 64)
+        var ovf14: int = (pf[30] / 4) + ((pf[31] % 4) * 64)
+        var ovf15: int = (pf[31] / 4) + ((pf[32] % 4) * 64)
+        var ovf16: int = pf[32] / 4
+
+        var lof0:  int = pf[0];  var lof1:  int = pf[1];  var lof2:  int = pf[2];  var lof3:  int = pf[3]
+        var lof4:  int = pf[4];  var lof5:  int = pf[5];  var lof6:  int = pf[6];  var lof7:  int = pf[7]
+        var lof8:  int = pf[8];  var lof9:  int = pf[9];  var lof10: int = pf[10]; var lof11: int = pf[11]
+        var lof12: int = pf[12]; var lof13: int = pf[13]; var lof14: int = pf[14]; var lof15: int = pf[15]
+        var lof16: int = pf[16] % 4
+
+        var ff0:  int = lof0  + ovf0  * 5; var ff1:  int = lof1  + ovf1  * 5
+        var ff2:  int = lof2  + ovf2  * 5; var ff3:  int = lof3  + ovf3  * 5
+        var ff4:  int = lof4  + ovf4  * 5; var ff5:  int = lof5  + ovf5  * 5
+        var ff6:  int = lof6  + ovf6  * 5; var ff7:  int = lof7  + ovf7  * 5
+        var ff8:  int = lof8  + ovf8  * 5; var ff9:  int = lof9  + ovf9  * 5
+        var ff10: int = lof10 + ovf10 * 5; var ff11: int = lof11 + ovf11 * 5
+        var ff12: int = lof12 + ovf12 * 5; var ff13: int = lof13 + ovf13 * 5
+        var ff14: int = lof14 + ovf14 * 5; var ff15: int = lof15 + ovf15 * 5
+        var ff16: int = lof16 + ovf16 * 5
+
+        ff0  = ff0  + 0; var cff0:  int = ff0  / 256; ff0  = ff0  % 256
+        ff1  = ff1  + cff0;  var cff1:  int = ff1  / 256; ff1  = ff1  % 256
+        ff2  = ff2  + cff1;  var cff2:  int = ff2  / 256; ff2  = ff2  % 256
+        ff3  = ff3  + cff2;  var cff3:  int = ff3  / 256; ff3  = ff3  % 256
+        ff4  = ff4  + cff3;  var cff4:  int = ff4  / 256; ff4  = ff4  % 256
+        ff5  = ff5  + cff4;  var cff5:  int = ff5  / 256; ff5  = ff5  % 256
+        ff6  = ff6  + cff5;  var cff6:  int = ff6  / 256; ff6  = ff6  % 256
+        ff7  = ff7  + cff6;  var cff7:  int = ff7  / 256; ff7  = ff7  % 256
+        ff8  = ff8  + cff7;  var cff8:  int = ff8  / 256; ff8  = ff8  % 256
+        ff9  = ff9  + cff8;  var cff9:  int = ff9  / 256; ff9  = ff9  % 256
+        ff10 = ff10 + cff9;  var cff10: int = ff10 / 256; ff10 = ff10 % 256
+        ff11 = ff11 + cff10; var cff11: int = ff11 / 256; ff11 = ff11 % 256
+        ff12 = ff12 + cff11; var cff12: int = ff12 / 256; ff12 = ff12 % 256
+        ff13 = ff13 + cff12; var cff13: int = ff13 / 256; ff13 = ff13 % 256
+        ff14 = ff14 + cff13; var cff14: int = ff14 / 256; ff14 = ff14 % 256
+        ff15 = ff15 + cff14; var cff15: int = ff15 / 256; ff15 = ff15 % 256
+        ff16 = ff16 + cff15; ff16 = ff16 % 256
+
+        var acc0fb:  byte = ff0  as byte; var acc1fb:  byte = ff1  as byte
+        var acc2fb:  byte = ff2  as byte; var acc3fb:  byte = ff3  as byte
+        var acc4fb:  byte = ff4  as byte; var acc5fb:  byte = ff5  as byte
+        var acc6fb:  byte = ff6  as byte; var acc7fb:  byte = ff7  as byte
+        var acc8fb:  byte = ff8  as byte; var acc9fb:  byte = ff9  as byte
+        var acc10fb: byte = ff10 as byte; var acc11fb: byte = ff11 as byte
+        var acc12fb: byte = ff12 as byte; var acc13fb: byte = ff13 as byte
+        var acc14fb: byte = ff14 as byte; var acc15fb: byte = ff15 as byte
+        var acc16fb: byte = ff16 as byte
+        this.acc[0]  = acc0fb;  this.acc[1]  = acc1fb
+        this.acc[2]  = acc2fb;  this.acc[3]  = acc3fb
+        this.acc[4]  = acc4fb;  this.acc[5]  = acc5fb
+        this.acc[6]  = acc6fb;  this.acc[7]  = acc7fb
+        this.acc[8]  = acc8fb;  this.acc[9]  = acc9fb
+        this.acc[10] = acc10fb; this.acc[11] = acc11fb
+        this.acc[12] = acc12fb; this.acc[13] = acc13fb
+        this.acc[14] = acc14fb; this.acc[15] = acc15fb
+        this.acc[16] = acc16fb
+    }
+
+    // FinalizeTag: compute tag = (acc + s) mod 2^128 and store in this.tag.
+    // Must be called after all ProcessBlock calls.
+    public fn FinalizeTag()
+    {
+        // Read acc.
+        var a0:  int = this.acc[0]  as int
+        var a1:  int = this.acc[1]  as int
+        var a2:  int = this.acc[2]  as int
+        var a3:  int = this.acc[3]  as int
+        var a4:  int = this.acc[4]  as int
+        var a5:  int = this.acc[5]  as int
+        var a6:  int = this.acc[6]  as int
+        var a7:  int = this.acc[7]  as int
+        var a8:  int = this.acc[8]  as int
+        var a9:  int = this.acc[9]  as int
+        var a10: int = this.acc[10] as int
+        var a11: int = this.acc[11] as int
+        var a12: int = this.acc[12] as int
+        var a13: int = this.acc[13] as int
+        var a14: int = this.acc[14] as int
+        var a15: int = this.acc[15] as int
+        var a16: int = this.acc[16] as int
+
+        // Final reduction: if acc >= 2^130-5, subtract (2^130-5).
+        // 2^130-5 = 0x3fffffffffffffffffffffffffffffffb (130 bits).
+        // In LE bytes: [0xfb, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        //               0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x03]
+        // We compute acc + 5 and check if it overflows 2^130 (carry into bit 130).
+        // If it does, acc >= 2^130-5, so we use the overflow value (acc + 5 mod 2^130).
+        var t0:  int = a0  + 5
+        var tc0: int = t0  / 256; t0  = t0  % 256
+        var t1:  int = a1  + tc0; var tc1: int = t1  / 256; t1  = t1  % 256
+        var t2:  int = a2  + tc1; var tc2: int = t2  / 256; t2  = t2  % 256
+        var t3:  int = a3  + tc2; var tc3: int = t3  / 256; t3  = t3  % 256
+        var t4:  int = a4  + tc3; var tc4: int = t4  / 256; t4  = t4  % 256
+        var t5:  int = a5  + tc4; var tc5: int = t5  / 256; t5  = t5  % 256
+        var t6:  int = a6  + tc5; var tc6: int = t6  / 256; t6  = t6  % 256
+        var t7:  int = a7  + tc6; var tc7: int = t7  / 256; t7  = t7  % 256
+        var t8:  int = a8  + tc7; var tc8: int = t8  / 256; t8  = t8  % 256
+        var t9:  int = a9  + tc8; var tc9: int = t9  / 256; t9  = t9  % 256
+        var t10: int = a10 + tc9; var tc10: int = t10 / 256; t10 = t10 % 256
+        var t11: int = a11 + tc10; var tc11: int = t11 / 256; t11 = t11 % 256
+        var t12: int = a12 + tc11; var tc12: int = t12 / 256; t12 = t12 % 256
+        var t13: int = a13 + tc12; var tc13: int = t13 / 256; t13 = t13 % 256
+        var t14: int = a14 + tc13; var tc14: int = t14 / 256; t14 = t14 % 256
+        var t15: int = a15 + tc14; var tc15: int = t15 / 256; t15 = t15 % 256
+        var t16: int = a16 + tc15; var tc16: int = t16 / 4;  t16 = t16 % 4
+
+        // If tc16 > 0, then acc + 5 >= 2^130, meaning acc >= 2^130-5.
+        // Use t[0..15] as the reduced accumulator (the +5 already accounts for subtraction).
+        // Otherwise use a[0..15].
+        // Conditional select without if: use mask.
+        // mask = 0 if tc16==0, mask = 255 if tc16 > 0.
+        // In Livt we can use arithmetic: if tc16 > 0 use t, else use a.
+        // We can't use ternary, but we can compute:
+        //   mask = (tc16 + 255) / 256  (0 when tc16=0, 1 when tc16=1..255)
+        // Then: result = a * (1-mask) + t * mask
+        // But multiplication is available. mask * 255 for AND-like behavior:
+        //   result[i] = (a[i] * (1 - mask)) + (t[i] * mask)
+        var mask: int = (tc16 + 255) / 256
+        var inv:  int = 1 - mask
+
+        var r0v: int = a0  * inv + t0  * mask
+        var r1v: int = a1  * inv + t1  * mask
+        var r2v: int = a2  * inv + t2  * mask
+        var r3v: int = a3  * inv + t3  * mask
+        var r4v: int = a4  * inv + t4  * mask
+        var r5v: int = a5  * inv + t5  * mask
+        var r6v: int = a6  * inv + t6  * mask
+        var r7v: int = a7  * inv + t7  * mask
+        var r8v: int = a8  * inv + t8  * mask
+        var r9v: int = a9  * inv + t9  * mask
+        var r10v: int = a10 * inv + t10 * mask
+        var r11v: int = a11 * inv + t11 * mask
+        var r12v: int = a12 * inv + t12 * mask
+        var r13v: int = a13 * inv + t13 * mask
+        var r14v: int = a14 * inv + t14 * mask
+        var r15v: int = a15 * inv + t15 * mask
+
+        // Add s (mod 2^128).
+        var s0i:  int = this.s[0]  as int
+        var s1i:  int = this.s[1]  as int
+        var s2i:  int = this.s[2]  as int
+        var s3i:  int = this.s[3]  as int
+        var s4i:  int = this.s[4]  as int
+        var s5i:  int = this.s[5]  as int
+        var s6i:  int = this.s[6]  as int
+        var s7i:  int = this.s[7]  as int
+        var s8i:  int = this.s[8]  as int
+        var s9i:  int = this.s[9]  as int
+        var s10i: int = this.s[10] as int
+        var s11i: int = this.s[11] as int
+        var s12i: int = this.s[12] as int
+        var s13i: int = this.s[13] as int
+        var s14i: int = this.s[14] as int
+        var s15i: int = this.s[15] as int
+
+        var u0:  int = r0v  + s0i;  var cu0:  int = u0  / 256; u0  = u0  % 256
+        var u1:  int = r1v  + s1i  + cu0;  var cu1:  int = u1  / 256; u1  = u1  % 256
+        var u2:  int = r2v  + s2i  + cu1;  var cu2:  int = u2  / 256; u2  = u2  % 256
+        var u3:  int = r3v  + s3i  + cu2;  var cu3:  int = u3  / 256; u3  = u3  % 256
+        var u4:  int = r4v  + s4i  + cu3;  var cu4:  int = u4  / 256; u4  = u4  % 256
+        var u5:  int = r5v  + s5i  + cu4;  var cu5:  int = u5  / 256; u5  = u5  % 256
+        var u6:  int = r6v  + s6i  + cu5;  var cu6:  int = u6  / 256; u6  = u6  % 256
+        var u7:  int = r7v  + s7i  + cu6;  var cu7:  int = u7  / 256; u7  = u7  % 256
+        var u8:  int = r8v  + s8i  + cu7;  var cu8:  int = u8  / 256; u8  = u8  % 256
+        var u9:  int = r9v  + s9i  + cu8;  var cu9:  int = u9  / 256; u9  = u9  % 256
+        var u10: int = r10v + s10i + cu9;  var cu10: int = u10 / 256; u10 = u10 % 256
+        var u11: int = r11v + s11i + cu10; var cu11: int = u11 / 256; u11 = u11 % 256
+        var u12: int = r12v + s12i + cu11; var cu12: int = u12 / 256; u12 = u12 % 256
+        var u13: int = r13v + s13i + cu12; var cu13: int = u13 / 256; u13 = u13 % 256
+        var u14: int = r14v + s14i + cu13; var cu14: int = u14 / 256; u14 = u14 % 256
+        var u15: int = r15v + s15i + cu14; u15 = u15 % 256
+
+        // Store tag (low 128 bits = 16 bytes, via local byte vars per §10).
+        var tg0:  byte = u0  as byte; var tg1:  byte = u1  as byte
+        var tg2:  byte = u2  as byte; var tg3:  byte = u3  as byte
+        var tg4:  byte = u4  as byte; var tg5:  byte = u5  as byte
+        var tg6:  byte = u6  as byte; var tg7:  byte = u7  as byte
+        var tg8:  byte = u8  as byte; var tg9:  byte = u9  as byte
+        var tg10: byte = u10 as byte; var tg11: byte = u11 as byte
+        var tg12: byte = u12 as byte; var tg13: byte = u13 as byte
+        var tg14: byte = u14 as byte; var tg15: byte = u15 as byte
+        this.tag[0]  = tg0;  this.tag[1]  = tg1
+        this.tag[2]  = tg2;  this.tag[3]  = tg3
+        this.tag[4]  = tg4;  this.tag[5]  = tg5
+        this.tag[6]  = tg6;  this.tag[7]  = tg7
+        this.tag[8]  = tg8;  this.tag[9]  = tg9
+        this.tag[10] = tg10; this.tag[11] = tg11
+        this.tag[12] = tg12; this.tag[13] = tg13
+        this.tag[14] = tg14; this.tag[15] = tg15
+    }
+
+    public fn GetTag() byte[16]
+    {
+        return this.tag
+    }
+
+    public fn GetByte(idx: int) byte
+    {
+        return this.tag[idx]
+    }
+}
