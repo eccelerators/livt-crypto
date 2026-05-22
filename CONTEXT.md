@@ -36,9 +36,9 @@ Typical files:
 - `.livt/deps/`: synchronized dependencies.
 - `out/`: generated build output.
 - `COMPILER.md`: project-local notes about compiler or VHDL generation issues.
-- `README.md` or `AGENTS.md`: project-local goals, architecture, API shape,
-  status, and human-facing usage.
 - `README.md`: human-facing overview and usage.
+- `AGENTS.md`: optional project-local continuation notes for agents, such as
+  goals, architecture, API shape, and status.
 
 For agent handoffs:
 
@@ -47,6 +47,62 @@ For agent handoffs:
 - Use `COMPILER.md` only for reproducible current compiler/generation bugs and
   local workarounds. Remove stale warnings once the compiler or verification
   suite proves a pattern is supported.
+
+## Practical Compiler Notes
+
+This file summarizes both the Livt book's intended language model and practical
+patterns that have compiled in real projects. When they differ, prefer the
+conservative pattern until `livt test` proves a broader form works.
+
+Current conservative defaults:
+
+- Use the Livt types described in the Data Types section. For arithmetic, `int`
+  is the safest default, even for algorithms that are conceptually unsigned. Use
+  `logic[N]` when explicit hardware width matters.
+- Declare component fields with field syntax, described in the Fields section.
+  Use `var` only for local variables inside functions, processes, states, and
+  tests.
+- If a local variable declaration produces `no viable alternative at input
+  'var'`, move locals to the top of the function/process/state, give them
+  explicit types, inline simple expressions, or reduce the number of locals.
+- Treat `for` and `foreach` as convenience syntax, not the safest baseline. For
+  bit-serial operations, synthesizable datapaths, and parser-sensitive code,
+  prefer a `while` loop with a predeclared index, named states, or manual
+  unrolling.
+- Mixed arithmetic on `byte`, `logic[N]`, `int`, and `uint` should use explicit
+  casts at the operator, not only at the assignment target. Cast bytes to `int`
+  before arithmetic, masks, and shifts, then cast back deliberately.
+
+When a pattern fails, reduce it to the smallest reproducer, record the exact
+error and workaround in project-local `COMPILER.md`, and then use the workaround
+throughout that project.
+
+## Comment Style
+
+Follow the Livt comment style from `livt-book/DESIGN_GUIDE.md`.
+
+Use full aligned `/** */` doc comments immediately before component
+declarations, constructors (`new()`), functions, and process declarations, even
+when the comment is a single sentence:
+
+```livt
+/**
+ * Resets the accumulator to zero.
+ */
+public fn Reset()
+```
+
+Use `//` comments for fields, constants, and short inline implementation notes:
+
+```livt
+// Maximum signed 16-bit accumulator value.
+public const ACC_MAX: int = 32767
+```
+
+Prefer self-documenting names over comments that merely explain what the code
+does. A comment should usually explain API contracts, ranges, timing
+assumptions, byte layouts, or why a non-obvious design choice exists. For
+byte-builder functions, include the byte-range layout in the `/** */` comment.
 
 ## Basic Livt Shape
 
@@ -136,9 +192,10 @@ class GfMath
     {
         var aInt: int = a as int
         var doubled: int = aInt * 2
+        var low8: int = 0
         if (aInt >= 128)
         {
-            var low8: int = doubled - 256
+            low8 = doubled - 256
             return (low8 as byte) ^ 0x1b
         }
         return doubled as byte
@@ -212,7 +269,11 @@ helpers. Use a plain `fn` with `state {}` blocks for those in-place operations.
 
 ### Fields
 
-Fields are values owned by a component. A field without `public` is private:
+Fields are values owned by a component. Declare fields directly in the component
+body with `name: type` forms. The declaration shape tells Livt whether the field
+is private state, public state, or a hardware signal.
+
+A field without `public` is private stored state:
 
 ```livt
 component PacketStatistics
@@ -227,7 +288,7 @@ component PacketStatistics
 }
 ```
 
-A public field without a direction is a stored public value — state owned by the
+A public field without a direction is stored public state — state owned by the
 component that callers can read directly:
 
 ```livt
@@ -241,8 +302,35 @@ public valid: in logic     // driven by the caller, read by this component
 public ready: out logic    // driven by this component, read by the caller
 ```
 
+Use these component field forms:
+
+```livt
+count: int              // private stored state
+public count: int       // public stored state
+public valid: in logic  // input signal driven by the caller
+public ready: out logic // output signal driven by this component
+```
+
 Use signal fields at hardware boundaries. Use stored fields for internal state
-and observable values.
+and observable status values. `var` is local-variable syntax and is not part of
+component field declarations.
+
+For values that only internal code mutates, default to a private stored field and
+add a public function for reads:
+
+```livt
+value: int
+
+public fn GetValue() int
+{
+	return this.value
+}
+```
+
+Use directionless `public value: int` only when callers truly need direct stored
+state access and the local compiler/VHDL generator has proven that public stored
+fields work for that type. For hardware boundary signals, always use explicit
+`in` or `out`.
 
 ### Constants
 
@@ -446,12 +534,14 @@ component PollingApp
 
 	process Main()
 	{
+		var data: byte = 0x00
+
 		if (!this.device.IsDataAvailable())
 		{
 			continue
 		}
 
-		var data = this.device.Receive()
+		data = this.device.Receive()
 
 		// Decode input, update state, and emit any response.
 		this.device.Transmit(data)
@@ -526,6 +616,24 @@ Common conventions:
 | `clock` | Clock signal | Sequential process context |
 | `reset` | Reset signal | Sequential process context |
 
+Livt's primitive vocabulary is small. It has booleans (`bool`), hardware logic
+bits and vectors (`logic`, `logic[N]`), bytes (`byte`), integer arithmetic types
+(`int`, `uint`), text (`string`), and timing signals (`clock`, `reset`).
+Fixed-size arrays are written by adding dimensions, such as `byte[64]` or
+`logic[32]`. Width-suffixed integer families are not separate Livt types; use
+`int` for arithmetic and `logic[N]` when the bit width is the important part.
+
+For arithmetic, use `int` as the default even when the algorithm is conceptually
+unsigned. Use explicit masks, range checks, and casts to document the intended
+low-bit behavior. Use `uint` only after the local compiler version has proven
+the exact pattern works.
+
+For a CRC32-style value, choose the representation by intent:
+
+- `int` for the accumulator and polynomial when arithmetic or shifts are needed.
+- `logic[32]` for a 32-bit hardware register or bit vector at a signal boundary.
+- `byte[4]` when byte layout and serialization matter more than word arithmetic.
+
 ### `bool`
 
 Use `bool` for decisions. Comparisons produce `bool`:
@@ -564,12 +672,28 @@ and protocol fields.
 
 ### `int` and `uint`
 
-Use `int` for signed integer arithmetic and loop counters. Use `uint` when
-negative values do not make sense:
+Use `int` for integer arithmetic and loop counters. The book presents `uint` for
+counts or values where negatives do not make sense:
 
 ```livt
 var offset: int = -4
 var length: uint = 1500
+```
+
+In current compiler-sensitive code, `int` is usually the safest arithmetic type,
+even for logically unsigned algorithms such as CRCs. Use `logic[N]` for explicit
+hardware width at ports or registers, but cast to `int` before numeric arithmetic
+or shifts when the operator does not accept the vector form. Prefer this:
+
+```livt
+var poly: int = 0x04C11DB7
+var acc: int = 0
+```
+
+Avoid this shape for arithmetic-heavy code:
+
+```livt
+var poly: logic[32] = 0x04C11DB7  // good register shape, awkward arithmetic
 ```
 
 ### `string`
@@ -586,6 +710,9 @@ A string can be encoded into bytes:
 ```livt
 const GREETING: byte[] = "Hello".Encode()
 ```
+
+Common escapes work in encoded strings, for example `"\r\n".Encode()` for CRLF
+and `"\t".Encode()` for a tab.
 
 Treat strings carefully in synthesizable code. Text is most often used at
 compile time, in constants, or in simulation-only APIs.
@@ -606,6 +733,13 @@ Array literals:
 ```livt
 var header: byte[4] = [0xDE, 0xAD, 0xBE, 0xEF]
 var offsets: int[3] = [0, 14, 34]
+```
+
+Prefer explicit array types on literals. Hardware review and VHDL generation are
+clearer when the element type and fixed length are visible:
+
+```livt
+var bytes: byte[3] = [0x10, 0x20, 0x30]
 ```
 
 Multi-dimensional arrays use nested literals:
@@ -665,6 +799,17 @@ Slices can also be assignment targets on `logic[N]` fields:
 
 ```livt
 this.word[4:8] = nibble
+```
+
+Slices do not use omitted bounds, negative indices, or step syntax. Write
+explicit non-negative bounds:
+
+```livt
+word[0:4]      // supported
+word[4:8]      // supported
+word[:4]       // unsupported
+word[4:]       // unsupported
+word[::-1]     // unsupported
 ```
 
 ### Logic Vectors vs Array Dimensions
@@ -730,7 +875,7 @@ Common verified conversions:
 |---|---|
 | `byte as int` / `byte as uint` | Unsigned widening, 0..255 |
 | `logic[N] as uint` | Unsigned interpretation |
-| `logic[N] as int` | Integer interpretation; use `uint` if the value is a hardware field that must be zero-extended |
+| `logic[N] as int` | Unsigned integer value of the bit pattern |
 | `logic[8] as byte` | Bit-for-bit 8-bit data reinterpretation |
 | `byte as logic[8]` | Bit-for-bit 8-bit vector reinterpretation |
 | `byte as logic[]` | Open-ended logic vector; width deduced from target, commonly 8 bits |
@@ -761,6 +906,22 @@ sub-expression where the mix happens:
 var sum: int = 0
 var item: byte = 0x10
 sum = sum + (item as int)
+```
+
+This is especially important for bytes. A `byte` is 8-bit data, not an
+automatically promoted integer. Promote before arithmetic, masking, or shifting:
+
+```livt
+var data: byte = 0x80
+var dataInt: int = data as int
+var shifted: int = dataInt << 1
+var low: byte = shifted as byte
+```
+
+The cast belongs where the operator sees it. This can still fail:
+
+```livt
+var shifted: int = data << 1     // wrong: operator still sees byte << int
 ```
 
 Parentheses around casts make mixed expressions easier to read, especially with
@@ -824,6 +985,42 @@ var valid: bool = true
 
 Variables are local to the function, process, or block where they are declared.
 Fields belong to the component; variables belong to the current piece of code.
+
+In the book, `var` appears freely in function bodies and loop headers. Some
+current compiler versions are more fragile. For production code, prefer explicit
+types and declare locals near the top of the function, process, or state before
+loops and nested blocks:
+
+```livt
+public fn Sum(values: byte[4]) int
+{
+	var sum: int = 0
+	var index: int = 0
+
+	while (index < 4)
+	{
+		sum = sum + (values[index] as int)
+		index++
+	}
+
+	return sum
+}
+```
+
+If `for (var index = 0; ...)` or `foreach (var item in ...)` triggers
+`no viable alternative at input 'var'`, use the predeclared-`while` form above.
+For very small fixed mappings, a sequence of direct assignments or guarded
+branches is often clearer and more compiler-friendly than a loop.
+
+When the parser is still unhappy with local declarations, reduce local variables
+rather than fighting the grammar:
+
+- Inline simple one-use expressions directly into assignments or returns.
+- Move repeated logic into a small helper function.
+- Use component fields for persistent state, declared with field syntax, not
+  `var`.
+- Manually unroll a tiny fixed sequence when that is clearer than a loop and
+  compiles more reliably.
 
 ### Conditions
 
@@ -905,7 +1102,21 @@ for (var index = 0; index < 4; index++)
 }
 ```
 
-Use `for` when iterating over a fixed range, array, or known number of cycles.
+Use `for` when iterating over a fixed range, array, or known number of cycles
+only after the project has shown that loop form compiles in the current context.
+If the `var` in the loop header is rejected by the parser, predeclare the index
+and use a `while` loop instead. For bit-serial transforms such as CRC update
+steps, manual unrolling is an acceptable fallback:
+
+```livt
+acc = this.UpdateBit(acc, bit0)
+acc = this.UpdateBit(acc, bit1)
+acc = this.UpdateBit(acc, bit2)
+acc = this.UpdateBit(acc, bit3)
+```
+
+For synthesizable components, also consider explicit named states when each
+iteration should happen over time rather than in one combinational expression.
 
 ### `foreach` Loops
 
@@ -924,8 +1135,9 @@ public fn SumBytes(data: logic[4, 8]) logic[8]
 ```
 
 For iterator components, the component should provide the iterator contract used
-by the base library (`Reset`, `HasNext`, and `Next` in current verification
-examples). The loop owns the traversal for that cursor:
+by the base library (`Init`, `HasNext`, and `Next` in the book; some older
+verification examples may use `Reset` instead of `Init`). The loop owns the
+traversal for that cursor:
 
 ```livt
 foreach (var item in this.iter)
@@ -933,6 +1145,10 @@ foreach (var item in this.iter)
 	sum = sum + item
 }
 ```
+
+Treat `foreach` as a convenience form rather than the safest baseline. If the
+compiler rejects `foreach (var item in ...)`, rewrite it as an explicit index
+loop over `.Length()` or a fixed bound.
 
 ### `break` and `continue`
 
@@ -1034,9 +1250,9 @@ state {
 ```
 
 This is the primary tool for reducing latency in performance-critical functions.
-For example, an AES round that processes 16 bytes sequentially takes 16+ cycles;
-wrapping all 16 byte operations in a single `state {}` reduces that to 1 cycle
-at the cost of a larger combinational path.
+For example, a transform that processes 16 bytes sequentially can take 16+
+cycles; wrapping the byte operations in a single `state {}` can reduce that to
+one cycle at the cost of a larger combinational path.
 
 ### Combinational Processes and Zero-Latency Outputs
 
@@ -1063,11 +1279,6 @@ the main strategy for achieving high-throughput designs in Livt.
 | `state { stmt1; stmt2; ... }` | All statements in one cycle (wider combinational path) |
 | `process Name[]()` | Zero-latency combinational output |
 | Named states + `goto` | Explicit multi-cycle FSM with reuse of states |
-
-For the crypto components in this project, wrapping the per-byte operations
-inside each round into a single `state {}` block would reduce AES EncryptBlock
-from ~50,000 cycles to roughly 10–20 cycles (one state per round), at the cost
-of a more complex combinational path that may reduce Fmax.
 
 ## Interfaces And Inheritance
 
@@ -1112,14 +1323,13 @@ function is incorrect and will not satisfy the contract.
 
 ### Interface Fields (Automatic Contract Fields)
 
-Interfaces may declare fields. When a component implements such an interface,
-the field is automatically materialized on the component — no redeclaration is
-needed or allowed:
+Interfaces may declare contract fields. For signal contracts, write explicit
+directions:
 
 ```livt
 interface ICounter
 {
-	value: logic[8]
+	value: out logic[8]
 	fn Increment()
 	fn Reset()
 }
@@ -1134,6 +1344,12 @@ component UpCounter : ICounter
 ```
 
 Redeclaring an interface field in the implementing component is a compiler error.
+
+Directionless interface fields such as `value: logic[8]` are intended to model
+stored public contract fields, but the book's design notes mark that behavior as
+an open implementation gap. Avoid directionless interface fields in production
+examples unless a local project has already verified them. Use explicit
+`in`/`out` signal fields in interfaces, or use functions for stored state.
 
 ### Interface Constants In Scope
 
@@ -1367,234 +1583,24 @@ then required `livt sync`.
 
 ## Practical Livt Style
 
-### Naming
+Naming:
 
-- **Namespaces**: `PascalCase`, two or three segments. E.g. `Livt.Dsp`,
-  `Livt.App`.
-- **Components/Interfaces**: `PascalCase` nouns. Interfaces start with `I`.
-  E.g. `ButterflyUnit`, `IMemory`.
-- **Functions**: `PascalCase`. `Get` prefix for pure reads, imperative verb for
-  side-effecting. E.g. `GetByte`, `Reset`, `LoadContent`.
-- **Fields**: `camelCase`. E.g. `rxByteIndex`, `headerLength`.
-- **Constants**: `UPPER_SNAKE_CASE`. E.g. `OFFSET`, `MAX_BUFFER_SIZE`.
-- **Parameters**: `camelCase`. E.g. `index`, `frame`.
+- Namespaces, components, interfaces, and functions use `PascalCase`.
+- Interfaces start with `I`.
+- Fields and parameters use `camelCase`.
+- Constants use `UPPER_SNAKE_CASE`.
 
-### Component Structure
+Design:
 
-- **Single responsibility**: Each component should have one clear purpose.
-- **Layer separation**: Separate reusable protocol code from application-specific
-  code. Keep protocol parsers, builders, and checksums in a shared library
-  namespace. Keep application-specific logic in the application namespace.
-- **Ownership**: Each component should own its own subcomponents. The top-level
-  application component is the composition root.
-- **Size**: Keep components small enough to read in one sitting (roughly under
-  200 lines). A function over ~50 lines should usually be split.
-
-### Fields
-
-- Default to private. Add `public` only when a caller genuinely needs access.
-- Fields are initialized to their zero values by default.
-- Use stored fields (no direction) for internal state. Use signal fields
-  (`in`/`out`) for hardware ports.
-
-### Functions
-
-- Keep functions as pure as possible. Pure functions are easier to test and
-  generate simpler VHDL.
-- Use guard clauses to return early for special cases.
-- Direct computed arguments are supported, including calls such as
-  `this.store.GetByte(index - 10)`. Still bind intermediate expressions to
-  local `var`s when that improves readability or when a project-specific
-  compiler note calls for it.
-- For nested subcomponent-call arguments, bind the inner call to a local `var`
-  first:
-
-```livt
-var offset = this.helper.GetOffset()
-return this.checker.IsGood(a, offset)
-```
-
-- For pure combinatorial helpers that need no component state, prefer
-  `inline fn` inside the calling component (zero overhead, no instance
-  needed) or `public static inline fn` on a `class` (shareable across
-  components).
-- `class` static methods are supported and are the preferred shape for
-  stateless shared helpers. Do not put fields or array constants in a class;
-  classes are function containers only.
-
-```livt
-// Compact
-return localMac[index - 6]
-
-// Easier to debug and comment
-var macIndex = index - 6
-return localMac[macIndex]
-```
-
-### Constructors
-
-- Constructors should wire subcomponents and record input bindings. They should
-  not contain complex logic.
-- Constructor method calls are supported and run as part of the generated
-  startup sequence before ordinary process behavior. Use them for small,
-  deterministic setup.
-- For computed initialization that loops over RAM, decodes data, or does
-  substantial work, prefer an explicit public startup function called from a
-  process or test.
-
-### Startup Functions
-
-Initialization that requires computation (pre-loading RAM, computing a checksum
-over a static buffer) is clearer and easier to test as an explicit startup
-function. Call it from a process with an `initialized: bool` guard:
-
-```livt
-process Main()
-{
-	if (!this.initialized)
-	{
-		this.LoadContent()
-		this.initialized = true
-	}
-
-	// ... normal work
-}
-```
-
-Or call the initialization method at the start of `@Test fn` bodies.
-
-## Assertions
-
-Use explicit boolean comparisons:
-
-```livt
-assert component.IsReady() == true
-assert component.IsError() == false
-```
-
-Avoid bare boolean assertions:
-
-```livt
-assert component.IsReady()
-```
-
-Some compiler versions have generated invalid VHDL for bare boolean assertions.
-
-## Arrays And Helpers
-
-Array parameters can be read, forwarded, and mutated. Use `out` when a function
-is meant to fill a caller-provided array:
-
-```livt
-public fn FillFrame(frame: out byte[64])
-{
-	frame[0] = 0xFF
-	frame[1] = 0xFE
-}
-```
-
-For test fixtures, setting up short arrays inline is often the most readable
-choice:
-
-```livt
-var frame: byte[128]
-frame[12] = 0x08
-frame[13] = 0x00
-```
-
-Helper functions that mutate an array parameter are also supported, including
-private helpers that commit changes back to a component field:
-
-```livt
-fn Fill(frame: byte[128])
-{
-	frame[12] = 0x08
-}
-```
-
-## Component Call Boundaries
-
-Direct computed arguments to same-component and subcomponent calls are supported:
-
-```livt
-return this.child.GetByte(index - OFFSET)
-```
-
-For nested subcomponent calls used as arguments, bind the inner result first:
-
-```livt
-var payloadOffset = this.header.GetPayloadOffset()
-return this.parser.Match(frame, payloadOffset)
-```
-
-For packet/frame builders, explicit index mapping can still be the clearest
-style when the mapping itself is the behavior under test:
-
-```livt
-if (index == 54) {
-	return this.payload.GetByte(0)
-}
-
-if (index == 55) {
-	return this.payload.GetByte(1)
-}
-```
-
-If you hit a compiler or simulation issue, record the exact pattern and
-workaround in `COMPILER.md`.
-
-## Types And Literals
-
-Common primitive-like types used in examples:
-
-- `bool`
-- `int`
-- `uint`
-- `byte`
-- `logic`
-- `logic[8]`
-- fixed arrays such as `byte[64]`, `byte[128]`
-
-Hex and binary literals are accepted in typed contexts:
-
-```livt
-var b: byte = 0x41
-var flags: logic[8] = 0b10101010
-var n: int = 0xFF
-```
-
-Use explicit casts when a literal's target type would otherwise be ambiguous or
-when comparing against a strongly typed value:
-
-```livt
-if (b == (255 as byte))
-{
-	return true
-}
-```
-
-## Strings And Encoded Bytes
-
-Double-quoted string literals can be converted to byte arrays with `.Encode()`,
-which is useful for readable test data and static payloads:
-
-```livt
-var content = "Hello, World!".Encode()
-```
-
-Common escape sequences are supported in encoded strings:
-
-```livt
-var crlf = "\r\n".Encode()     // 0x0D, 0x0A
-var tab = "\t".Encode()        // 0x09
-```
-
-Use `.Length()` on encoded byte arrays when the size matters:
-
-```livt
-var bytes = "OK".Encode()
-var len = bytes.Length()
-```
+- Give each component one clear responsibility and a small public API.
+- Default fields to private; add `public` only for real API state or signals.
+- Keep constructors for wiring. Put behavior in functions and processes.
+- Prefer pure helpers where possible. For shared stateless helpers, use a
+  `class` with `public static inline fn`.
+- Bind nested subcomponent-call results to a local before passing them onward,
+  unless the direct expression is simple and known to compile.
+- Move heavy startup work into an explicit startup function, called from a
+  process with an initialization guard or at the start of a test.
 
 ## Dependencies
 
@@ -1612,7 +1618,6 @@ them; dependency APIs are often small and explicit.
 
 The Livt base library provides common types, annotations, and utilities:
 
-- **Core types**: `bool`, `byte`, `int`, `logic`, `string`, `clock`, `reset`
 - **Annotations**: `@Test` on components and functions
 - **Simulation utilities**: `Simulation.Report(...)` for test output and
   `Simulation.Wait(...)` for simulation time in tests
@@ -1632,81 +1637,16 @@ Key base library namespaces include:
 - `Livt.String`: string helpers for simulation and tests
 - `Livt.Array`: fixed-size array helpers
 
-## Packages and Reuse
+## Project Lifecycle Notes
 
-A package is the delivery and maintenance unit around reusable Livt code. A good
-package contains a coherent capability: a protocol interface and helpers, a
-reusable component, a family of related components, or a vendor wrapper.
-
-A package should provide:
-
-- clear public API (components, interfaces, constants)
-- tests that verify the public contract
-- versioning (signal direction, constructor, timing, or reset changes are
-  breaking)
-- documentation (what it provides, how to instantiate, timing assumptions)
-
-Extract a package when at least two projects need the same code, the interface
-is stable, and the tests are strong enough to protect users.
-
-## Vendor Integration
-
-Livt generates VHDL so designs can enter existing FPGA and ASIC toolchains. The
-normal flow is: write Livt source → build → review generated VHDL → run
-simulation → hand to vendor flow for synthesis/implementation.
-
-Keep synthesizable design code separate from test and simulation code. The
-top-level component is the bridge to the vendor project — keep its constructor
-clear and hardware-facing:
-
-```livt
-component Top
-{
-	app: AppCore
-
-	new(clk: clock, rst: reset, rx: in logic, tx: out logic)
-	{
-		this.context.clk = clk
-		this.context.rst = rst
-		this.app = new AppCore(rx, tx)
-	}
-}
-```
-
-Wrap vendor-specific primitives (PLLs, block RAMs, transceivers, IO buffers)
-behind stable Livt interfaces. Keep constraints (clock definitions, pin
-assignments, IO standards) versioned with the project.
-
-Before integrating into a vendor project, inspect generated ports: Are directions
-correct? Are clock/reset ports connected as expected? Do interface fields expand
-into expected VHDL records or ports?
-
-## Continuous Integration
-
-A useful Livt CI pipeline answers: Does the project build? Do all tests pass?
-Did generated VHDL change unexpectedly?
-
-Start with `livt build` and `livt test` on every change. Add heavier vendor jobs
-(synthesis, implementation, timing reports) on a schedule or before release.
-
-Archive generated VHDL as a build artifact. Keep tests deterministic. Group tests
-by cost: fast unit tests for every change, integration simulations for merge
-requests, vendor implementation for release gates.
-
-## Migration to Livt
-
-Migration does not need to be a rewrite. The safest path is gradual:
-
-1. Read the existing design first — understand top-level ports, clocks, resets,
-   state, protocol boundaries, and vendor primitives.
-2. Choose small, well-tested migration targets: byte classifiers, packet header
-   parsers, register blocks, simple FIFOs, protocol adapters.
-3. Wrap existing VHDL/Verilog behind a Livt interface. New code uses the Livt
-   contract while old code remains in place.
-4. Replace boilerplate first: duplicated constants, repeated signal bundles,
-   hand-written testbench setup, protocol field extraction.
-5. Preserve behavior — keep original testbenches passing, write equivalent Livt
-   tests, inspect generated VHDL.
+- Extract packages only for stable, reusable APIs with tests and documentation.
+- Keep synthesizable source separate from tests and simulation-only helpers.
+- For vendor integration, keep the top-level component hardware-facing and wrap
+  vendor primitives behind stable Livt interfaces.
+- In CI, run `livt build` and `livt test`; archive generated VHDL when changes
+  to backend output matter.
+- For migrations, start with small, well-tested pieces and preserve behavior
+  against the existing VHDL/Verilog design.
 
 ## Testing Strategy
 
@@ -1724,6 +1664,16 @@ Add tests immediately after each small component:
 Prefer several small tests over one monolithic integration test. When a test
 fails due to compiler/VHDL generation rather than logic, reduce the pattern and
 document it.
+
+Use explicit boolean comparisons in assertions:
+
+```livt
+assert component.IsReady() == true
+assert component.IsError() == false
+```
+
+Some compiler versions have generated invalid VHDL for bare boolean assertions
+such as `assert component.IsReady()`.
 
 ### Testing Stateful Components
 
@@ -1772,10 +1722,10 @@ fn CompletesAfterStartup()
 For each Livt example project, use:
 
 - `CONTEXT.md`: this reusable Livt agent guide.
-- `README.md` or `AGENTS.md`: project-specific goal, scope, architecture,
-  current status, next steps, and local quirks.
+- `README.md`: human-facing overview and run instructions.
+- `AGENTS.md`: optional project-specific agent notes: goal, scope,
+  architecture, current status, next steps, and local quirks.
 - `COMPILER.md`: compiler/generation issues found in that project.
-- `README.md`: human-facing project overview and run instructions.
 
 Future prompt pattern:
 
