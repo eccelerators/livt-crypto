@@ -273,3 +273,7 @@ resource planning — synthesise and report for your actual target.**
 | Poly1305 | 300–700 | 400–600 | 130-bit accumulator |
 | ChaCha20-Poly1305 | 1,100–2,200 | 2,000–2,700 | ChaCha20 + Poly1305 |
 | AES-256 CTR DRBG | 600–1,300 | 2,100–2,500 | AES-256 block cipher |
+
+## 📄 License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE).
