@@ -1,13 +1,12 @@
 namespace Livt.Crypto.Internal
 
-// Forward AES S-box (FIPS 197 Table 4) as a class with enumerated inline
+// Forward AES S-box (FIPS 197 Table 4) as a class with enumerated context-free
 // returns — no array constants needed, keeping the class fields-free as
 // required by the Livt class model (classes have no fields; public const
 // array fields in a class are silently dropped by the VHDL generator).
-// See COMPILER.md §29.
 class AesSBox
 {
-    public static inline fn Substitute(input: byte) byte
+    public static inline fn Substitute[](input: byte) byte
     {
         var idx: int = input as int
         if (idx == 0x00) { return 0x63 }

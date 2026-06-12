@@ -12,7 +12,7 @@ class AesGfMath
     // The field polynomial is x^8 + x^4 + x^3 + x + 1 (reduction by 0x1b).
     // -----------------------------------------------------------------------
 
-    public static inline fn Mul2(a: byte) byte
+    public static inline fn Mul2[](a: byte) byte
     {
         var aInt: int = a as int
         var doubled: int = aInt * 2
@@ -26,34 +26,34 @@ class AesGfMath
     }
 
     // Mul3 = Mul2(a) XOR a  — used by MixColumns.
-    public static inline fn Mul3(a: byte) byte
+    public static inline fn Mul3[](a: byte) byte
     {
         var m2: byte = AesGfMath.Mul2(a)
         return m2 ^ a
     }
 
     // Mul4, Mul8 build toward the InvMixColumns coefficients.
-    public static inline fn Mul4(a: byte) byte
+    public static inline fn Mul4[](a: byte) byte
     {
         var m2: byte = AesGfMath.Mul2(a)
         return AesGfMath.Mul2(m2)
     }
 
-    public static inline fn Mul8(a: byte) byte
+    public static inline fn Mul8[](a: byte) byte
     {
         var m4: byte = AesGfMath.Mul4(a)
         return AesGfMath.Mul2(m4)
     }
 
     // Mul9  = Mul8(a) XOR a
-    public static inline fn Mul9(a: byte) byte
+    public static inline fn Mul9[](a: byte) byte
     {
         var m8: byte = AesGfMath.Mul8(a)
         return m8 ^ a
     }
 
     // Mul11 = Mul8(a) XOR Mul2(a) XOR a
-    public static inline fn Mul11(a: byte) byte
+    public static inline fn Mul11[](a: byte) byte
     {
         var m8: byte = AesGfMath.Mul8(a)
         var m2: byte = AesGfMath.Mul2(a)
@@ -62,7 +62,7 @@ class AesGfMath
     }
 
     // Mul13 = Mul8(a) XOR Mul4(a) XOR a
-    public static inline fn Mul13(a: byte) byte
+    public static inline fn Mul13[](a: byte) byte
     {
         var m8: byte = AesGfMath.Mul8(a)
         var m4: byte = AesGfMath.Mul4(a)
@@ -71,7 +71,7 @@ class AesGfMath
     }
 
     // Mul14 = Mul8(a) XOR Mul4(a) XOR Mul2(a)
-    public static inline fn Mul14(a: byte) byte
+    public static inline fn Mul14[](a: byte) byte
     {
         var m8: byte = AesGfMath.Mul8(a)
         var m4: byte = AesGfMath.Mul4(a)
@@ -85,7 +85,7 @@ class AesGfMath
     // AES-256 uses indices 1..7.  AES-128 extends to index 10.
     // -----------------------------------------------------------------------
 
-    public static inline fn GetRcon(rconIdx: int) byte
+    public static inline fn GetRcon[](rconIdx: int) byte
     {
         if (rconIdx == 1)  { return 0x01 }
         if (rconIdx == 2)  { return 0x02 }
