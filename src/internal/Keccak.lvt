@@ -1,5 +1,7 @@
 namespace Livt.Crypto.Internal
 
+using Livt.Lang.Annotations
+
 // Keccak-f[1600] permutation — 1600-bit state, 24 rounds.
 //
 // The 200-byte state A holds 25 64-bit lanes in little-endian byte order.
@@ -481,6 +483,7 @@ component Keccak
     // LE: b0 = LSByte, b7 = MSByte.
     // Left rotation by n bits: equivalent to right rotation by (64-n).
     // Byte-level: rotate bytes left by q = n/8 positions; then rotate bits left by r = n%8.
+    @SuppressWarning("variable-divisor")
     fn RotlLE(b0: byte, b1: byte, b2: byte, b3: byte, b4: byte, b5: byte, b6: byte, b7: byte, n: int) byte[8]
     {
         if (n == 0)

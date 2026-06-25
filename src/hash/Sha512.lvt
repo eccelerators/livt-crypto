@@ -1,5 +1,7 @@
 namespace Livt.Crypto.Hash
 
+using Livt.Lang.Annotations
+
 // SHA-512 (NIST FIPS 180-4) — single-block, 1024-bit input / 512-bit output.
 //
 // Usage (per message, one 1024-bit block at a time):
@@ -435,6 +437,7 @@ component Sha512
     }
 
     // Rotr: rotate right a 64-bit big-endian word by n bits (0 <= n <= 63).
+    @SuppressWarning("variable-divisor")
     fn Rotr(b0: byte, b1: byte, b2: byte, b3: byte, b4: byte, b5: byte, b6: byte, b7: byte, n: int) byte[8]
     {
         var q: int = n / 8
@@ -486,6 +489,7 @@ component Sha512
     }
 
     // Shr: logical right shift of a 64-bit big-endian word by n bits (0 <= n <= 63).
+    @SuppressWarning("variable-divisor")
     fn Shr(b0: byte, b1: byte, b2: byte, b3: byte, b4: byte, b5: byte, b6: byte, b7: byte, n: int) byte[8]
     {
         var q: int = n / 8

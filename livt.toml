@@ -1,6 +1,6 @@
 [project]
 name = "Livt.Crypto"
-version = "1.0.2"
+version = "1.0.3"
 path = "src"
 outdir = "out"
 
@@ -41,7 +41,7 @@ components = [
 ]
 
 [build.debug]
-warnings = ["all", "no-variable-divisor"]
+warnings = ["all"]
 
 [build.release]
 warnings = ["all"]

@@ -1,5 +1,7 @@
 namespace Livt.Crypto.Hash
 
+using Livt.Lang.Annotations
+
 // SHA-256 (NIST FIPS 180-4) — single-block, 512-bit input / 256-bit output.
 //
 // Usage (per message, one 512-bit block at a time):
@@ -333,6 +335,7 @@ component Sha256
     }
 
     // Rotr: rotate right a 32-bit big-endian word by n bits (0 <= n <= 31).
+    @SuppressWarning("variable-divisor")
     fn Rotr(b0: byte, b1: byte, b2: byte, b3: byte, n: int) byte[4]
     {
         var q: int = n / 8
@@ -386,6 +389,7 @@ component Sha256
     }
 
     // Shr: logical right shift of a 32-bit big-endian word by n bits (0 <= n <= 31).
+    @SuppressWarning("variable-divisor")
     fn Shr(b0: byte, b1: byte, b2: byte, b3: byte, n: int) byte[4]
     {
         var q: int = n / 8
