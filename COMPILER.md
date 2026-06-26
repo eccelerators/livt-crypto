@@ -6,7 +6,7 @@ Bugs discovered while implementing AES-128, AES-192, AES-256, CMAC, SHA-256, Cha
 
 ## 31. [BUG] Void inline fn procedure: array field writes use wrong VHDL assignment
 
-**Status**: Active bug. Do not use void `inline fn` with array field writes until fixed.
+**Status**: Fixed in the current compiler; AES round helpers now use void `inline fn` with array field writes and pass the full crypto suite.
 Tracked as **livt #65** in livt/COMPILER.md.
 
 When a void `inline fn` writes to a component array field (`this.blk[i] = val`), the
@@ -26,13 +26,13 @@ This affects all 6 `EncryptBlock`/`DecryptBlock` components which write to `this
 inside `SubBytes`, `ShiftRows`, `MixColumns`, `InvSubBytes`, `InvShiftRows`, `InvMixColumns`,
 and `ApplyRoundKey`.
 
-**Workaround**: Keep these round-op functions as plain `fn` with `state {}` blocks.
+**Former workaround**: Keep these round-op functions as plain `fn` with `state {}` blocks. This is no longer required for the tested AES round-helper pattern.
 
 ---
 
 ## 30. [BUG] Void inline fn procedure: class static calls lack package qualifier in VHDL
 
-**Status**: Active bug. Do not use void `inline fn` with class static calls until fixed.
+**Status**: Fixed in the current compiler; AES void `inline fn` helpers call class static helpers and pass the full crypto suite.
 Tracked as **livt #64** in livt/COMPILER.md.
 
 When a void `inline fn` body calls a `public static inline fn` on a class
@@ -49,8 +49,8 @@ This is the same package-qualifier bug that affects component-to-class calls at 
 scope, but here it manifests inside the generated `procedure` body rather than at the
 FSM process level.
 
-**Workaround**: Keep any function that calls class static methods as a plain `fn` with
-a `state {}` block, where the class calls are correctly emitted with package qualifiers.
+**Former workaround**: Keep any function that calls class static methods as a plain `fn` with
+   a `state {}` block. This is no longer required for the tested AES round-helper pattern.
 
 ---
 
@@ -81,9 +81,7 @@ Applied in `AesSBox.Substitute` (256 entries) and `AesSBoxInverse.Substitute` (2
 
  Feature request: void `inline fn` that writes to component fields — emit as VHDL `procedure`
 
-**Status**: Parser now accepts void `inline fn`, and the VHDL generator now emits a proper
-VHDL `procedure`. However, two new VHDL generation bugs remain (§30, §31). Do not use
-void `inline fn` until §30 and §31 are fixed.
+**Status**: Supported for the tested AES round-helper pattern. Parser, validator, and VHDL generation now handle void `inline fn` procedures with locals, class static helper calls, and partial array field writes.
 
 ### Observation (May 2026 — confirmed by attempting the §27 migration)
 
@@ -103,9 +101,7 @@ in `EncryptBlock128` (and all other Encrypt/Decrypt variants) revealed that:
 - **No VHDL `procedure` declarations are emitted** — the generator skips step 4 entirely
   and instead inlines only the statement bodies, discarding the variable declarations.
 
-**Conclusion**: Items 1–2 from "Required generator changes" below are done (parser
-accepts void inline fn and allows `this.field` writes), but items 3–6 are not.
-The source files were reverted to `fn` + `state {}` until the generator is fixed.
+**Current result**: Items 1–6 from "Required generator changes" are covered for the AES round-helper pattern. `SubBytes`, `ShiftRows`, `MixColumns`, `ApplyRoundKey`, and inverse variants are now void `inline fn` helpers. The source keeps a small `state {}` barrier after the round loop so post-loop inline helpers are sequenced separately from the loop-back state.
 
 ### Motivation
 
@@ -179,8 +175,8 @@ sub_bytes(this_blk);
 
 ### Impact on this project
 
-After this feature is implemented, the following functions in all six AES encrypt/decrypt
-components can be marked `inline`:
+After this feature was implemented and validated, the following functions in all six AES encrypt/decrypt
+components are marked `inline`:
 
 | Function | Components |
 |----------|------------|
@@ -195,9 +191,7 @@ No changes to test files are needed — the observable behaviour is identical.
 
 ## 27. `inline fn` inside a component: current constraints
 
-1. **Void `inline fn` is now parser-accepted** — `inline fn Foo()` (no return type)
-   is no longer rejected at parse time. However, the VHDL generator is broken for this
-   case (§28 observation). Do **not** use void `inline fn` until §28 is fully fixed.
+1. **Void `inline fn` is parser-accepted and VHDL-tested** — `inline fn Foo()` (no return type) now works for the tested AES field-mutating helper pattern.
 
 2. **Must not contain `state {}` blocks** — still rejected with:
    `ERROR: Inline functions must not contain 'state {}' blocks — they must be purely combinatorial.`
@@ -205,7 +199,7 @@ No changes to test files are needed — the observable behaviour is identical.
 **Consequence for round-op functions** (`SubBytes`, `ShiftRows`, `MixColumns`,
 `InvSubBytes`, `InvShiftRows`, `InvMixColumns`, `ApplyRoundKey`):
 
-Keep these as plain `fn` with `state {}` blocks until §28 VHDL generator bug is fixed.
+These can now be void `inline fn` helpers. When a loop is immediately followed by post-loop inline calls, keep an explicit `state {}` sequencing barrier after the loop.
 
 ---
 

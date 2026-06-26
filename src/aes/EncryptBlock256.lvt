@@ -121,6 +121,8 @@ component EncryptBlock256
             round++
         }
 
+        state {}
+
         this.SubBytes()
         this.ShiftRows()
         this.ApplyRoundKey(14)
@@ -148,9 +150,8 @@ component EncryptBlock256
     // Private round operations (same-component calls, zero cross-component overhead)
     // -----------------------------------------------------------------------
 
-    fn SubBytes()
+    inline fn SubBytes()
     {
-        state {
         var bsb0:  byte = this.blk[0]
         var bsb1:  byte = this.blk[1]
         var bsb2:  byte = this.blk[2]
@@ -199,12 +200,10 @@ component EncryptBlock256
         this.blk[13] = r13
         this.blk[14] = r14
         this.blk[15] = r15
-        }
     }
 
-    fn ShiftRows()
+    inline fn ShiftRows()
     {
-        state {
         var c00: byte = this.blk[0]
         var c01: byte = this.blk[4]
         var c02: byte = this.blk[8]
@@ -237,12 +236,10 @@ component EncryptBlock256
         this.blk[7]  = r30
         this.blk[11] = r31
         this.blk[15] = r32
-        }
     }
 
-    fn MixColumns()
+    inline fn MixColumns()
     {
-        state {
         var bm0:  byte = this.blk[0]
         var bm1:  byte = this.blk[1]
         var bm2:  byte = this.blk[2]
@@ -355,12 +352,10 @@ component EncryptBlock256
         this.blk[13] = new1c3
         this.blk[14] = new2c3
         this.blk[15] = new3c3
-        }
     }
 
-    fn ApplyRoundKey(round: int)
+    inline fn ApplyRoundKey(round: int)
     {
-        state {
         var base: int = round * 16
         var ki1:  int = base + 1
         var ki2:  int = base + 2
@@ -425,7 +420,6 @@ component EncryptBlock256
         this.blk[13] = bk13 ^ k13
         this.blk[14] = bk14 ^ k14
         this.blk[15] = bk15 ^ k15
-        }
     }
 
 }

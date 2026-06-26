@@ -509,7 +509,7 @@ component ChaCha20
     // QR: ChaCha20 quarter-round on four 32-bit little-endian words.
     // Each word is passed as 4 ints (LS byte first: wa, wb, wc, wd).
     // Returns 16 ints: new a (4), new b (4), new c (4), new d (4).
-    fn QR(aa: int, ab: int, ac: int, ad: int,
+    fn QR[](aa: int, ab: int, ac: int, ad: int,
           ba: int, bb: int, bc: int, bd: int,
           ca: int, cb: int, cc: int, cd: int,
           da: int, db: int, dc: int, dd: int) int[16]
@@ -563,7 +563,7 @@ component ChaCha20
     }
 
     // AddWord32: modular 32-bit addition, little-endian (LS byte first).
-    fn AddWord32(a0: int, a1: int, a2: int, a3: int,
+    inline fn AddWord32[](a0: int, a1: int, a2: int, a3: int,
                  b0: int, b1: int, b2: int, b3: int) int[4]
     {
         var s0: int = a0 + b0
@@ -586,7 +586,7 @@ component ChaCha20
     }
 
     // XorWord32: bitwise XOR of two 32-bit little-endian words (byte-by-byte).
-    fn XorWord32(a0: int, a1: int, a2: int, a3: int,
+    inline fn XorWord32[](a0: int, a1: int, a2: int, a3: int,
                  b0: int, b1: int, b2: int, b3: int) int[4]
     {
         var xa: byte = a0 as byte; var xb: byte = b0 as byte; var x0b: byte = xa ^ xb; var x0: int = x0b as int
@@ -605,7 +605,7 @@ component ChaCha20
     // LE bytes [b0,b1,b2,b3] represent value b0 + b1*256 + b2*65536 + b3*16777216.
     // Rotl16 swaps the two 16-bit halves: result = (val >> 16) | (val << 16) mod 2^32.
     // In byte terms: [b2, b3, b0, b1].
-    fn Rotl16(b0: int, b1: int, b2: int, b3: int) int[4]
+    inline fn Rotl16[](b0: int, b1: int, b2: int, b3: int) int[4]
     {
         var result: int[4]
         result[0] = b2
@@ -617,7 +617,7 @@ component ChaCha20
 
     // Rotl8: rotate left 32-bit little-endian word by 8 bits.
     // In byte terms: [b3, b0, b1, b2].
-    fn Rotl8(b0: int, b1: int, b2: int, b3: int) int[4]
+    inline fn Rotl8[](b0: int, b1: int, b2: int, b3: int) int[4]
     {
         var result: int[4]
         result[0] = b3
@@ -634,7 +634,7 @@ component ChaCha20
     // b1' = (b3 >> 4) | (b0 << 4)
     // b2' = (b0 >> 4) | (b1 << 4)
     // b3' = (b1 >> 4) | (b2 << 4)
-    fn Rotl12(b0: int, b1: int, b2: int, b3: int) int[4]
+    inline fn Rotl12[](b0: int, b1: int, b2: int, b3: int) int[4]
     {
         var r0: int = (b2 / 16) + (b3 % 16) * 16
         var r1: int = (b3 / 16) + (b0 % 16) * 16
@@ -655,7 +655,7 @@ component ChaCha20
     // b1' = (b0 >> 1) + (b1 % 2) * 128
     // b2' = (b1 >> 1) + (b2 % 2) * 128
     // b3' = (b2 >> 1) + (b3 % 2) * 128
-    fn Rotl7(b0: int, b1: int, b2: int, b3: int) int[4]
+    inline fn Rotl7[](b0: int, b1: int, b2: int, b3: int) int[4]
     {
         var r0: int = (b3 / 2) + (b0 % 2) * 128
         var r1: int = (b0 / 2) + (b1 % 2) * 128

@@ -198,12 +198,12 @@ call.
 
 | Component | Key | Block | Suite cycles | Test throughput |
 |-----------|-----|-------|-------------|-----------------|
-| `EncryptBlock128` | 128 b | 16 B | 22,161 | 12.7 Mbps |
-| `DecryptBlock128` | 128 b | 16 B | 25,637 |  5.0 Mbps |
-| `EncryptBlock192` | 192 b | 16 B | 25,657 |  6.0 Mbps |
-| `DecryptBlock192` | 192 b | 16 B | 29,641 |  4.3 Mbps |
-| `EncryptBlock256` | 256 b | 16 B | 68,091 |  4.1 Mbps |
-| `DecryptBlock256` | 256 b | 16 B | 34,675 |  3.7 Mbps |
+| `EncryptBlock128` | 128 b | 16 B | 20,173 | 13.9 Mbps |
+| `DecryptBlock128` | 128 b | 16 B | 23,977 |  5.3 Mbps |
+| `EncryptBlock192` | 192 b | 16 B | 23,285 |  6.6 Mbps |
+| `DecryptBlock192` | 192 b | 16 B | 27,661 |  4.6 Mbps |
+| `EncryptBlock256` | 256 b | 16 B | 63,033 |  4.4 Mbps |
+| `DecryptBlock256` | 256 b | 16 B | 32,375 |  4.0 Mbps |
 
 The variation across key sizes mostly reflects differing key-schedule costs
 and unequal test-function counts (seven encrypt tests vs four decrypt tests).
@@ -212,18 +212,18 @@ and unequal test-function counts (seven encrypt tests vs four decrypt tests).
 
 | Component | Mode | Key | Block | Suite cycles | Test throughput |
 |-----------|------|-----|-------|-------------|-----------------|
-| `Cbc128` | CBC | 128 b | 16 B | 29,841 | 3.4 Mbps |
-| `Cbc192` | CBC | 192 b | 16 B | 34,337 | 3.0 Mbps |
-| `Cbc256` | CBC | 256 b | 16 B | 54,169 | 2.8 Mbps |
-| `Ctr128` | CTR | 128 b | 16 B | 18,065 | 7.1 Mbps |
-| `Ctr192` | CTR | 192 b | 16 B | 13,511 | 5.7 Mbps |
-| `Ctr256` | CTR | 256 b | 16 B | 24,067 | 5.3 Mbps |
-| `Aes128Gcm` | GCM | 128 b | 16 B | 96,965 | 0.79 Mbps |
-| `Aes192Gcm` | GCM | 192 b | 16 B | 100,013 | 0.77 Mbps |
-| `Aes256Gcm` | GCM | 256 b | 16 B | 107,873 | 0.71 Mbps |
-| `Cmac128` | CMAC | 128 b | 16 B | 23,889 | ~3.2 Mbps |
-| `Cmac192` | CMAC | 192 b | 16 B | 26,861 | ~2.9 Mbps |
-| `Cmac256` | CMAC | 256 b | 16 B | 30,451 | ~2.5 Mbps |
+| `Cbc128` | CBC | 128 b | 16 B | 28,471 | 3.6 Mbps |
+| `Cbc192` | CBC | 192 b | 16 B | 32,711 | 3.1 Mbps |
+| `Cbc256` | CBC | 256 b | 16 B | 51,353 | 3.0 Mbps |
+| `Ctr128` | CTR | 128 b | 16 B | 16,367 | 7.8 Mbps |
+| `Ctr192` | CTR | 192 b | 16 B | 12,297 | 6.2 Mbps |
+| `Ctr256` | CTR | 256 b | 16 B | 21,729 | 5.9 Mbps |
+| `Aes128Gcm` | GCM | 128 b | 16 B | 94,925 | 0.81 Mbps |
+| `Aes192Gcm` | GCM | 192 b | 16 B | 97,589 | 0.79 Mbps |
+| `Aes256Gcm` | GCM | 256 b | 16 B | 105,065 | 0.73 Mbps |
+| `Cmac128` | CMAC | 128 b | 16 B | 20,835 | ~3.7 Mbps |
+| `Cmac192` | CMAC | 192 b | 16 B | 23,359 | ~3.4 Mbps |
+| `Cmac256` | CMAC | 256 b | 16 B | 26,501 | ~2.9 Mbps |
 
 GCM figures include GHASH authentication per block.  CMAC throughput is
 approximate (test suite byte count is small).
@@ -232,10 +232,10 @@ approximate (test suite byte count is small).
 
 | Component | Block | Output | Suite cycles | Test throughput |
 |-----------|-------|--------|-------------|-----------------|
-| `Sha256`  |  64 B | 32 B | 693,957 | 0.59 Mbps |
-| `Sha512`  | 128 B | 64 B | 1,480,965 | 0.55 Mbps |
-| `Sha3256` | 136 B | 32 B | 917,825 | 0.47 Mbps |
-| `Sha3512` |  72 B | 64 B | 916,929 | 0.25 Mbps |
+| `Sha256`  |  64 B | 32 B | 87,597 | 4.7 Mbps |
+| `Sha512`  | 128 B | 64 B | 207,981 | 3.9 Mbps |
+| `Sha3256` | 136 B | 32 B | 723,849 | 0.60 Mbps |
+| `Sha3512` |  72 B | 64 B | 722,825 | 0.32 Mbps |
 
 SHA-3-512's lower byte throughput versus SHA-3-256 reflects the narrower
 absorption rate (72 B vs 136 B) over the same Keccak-f[1600] permutation.
@@ -244,13 +244,13 @@ absorption rate (72 B vs 136 B) over the same Keccak-f[1600] permutation.
 
 | Component | Block | Suite cycles | Test throughput | Notes |
 |-----------|-------|-------------|-----------------|-------|
-| `HmacSha256` | 64 B | 1,389,101 | ~0.15 Mbps | Two RFC 4231 vectors; two SHA-256 passes per MAC |
-| `HmacSha512` | 128 B | 2,964,397 | ~0.14 Mbps | Two RFC 4231 vectors; two SHA-512 passes per MAC |
-| `HkdfSha256` | 64 B | 4,166,969 | — | Extract + ExpandT1 + ExpandTN per TC; chains HMAC |
-| `Poly1305` | 16 B | 14,605 | ~5.3 Mbps | 16-byte block one-time MAC |
-| `ChaCha20` | 64 B | 240,167 | 1.72 Mbps | — |
-| `ChaCha20Poly1305` | 64 B | 386,243 | 0.79 Mbps | Includes Poly1305 auth per block |
-| `Aes256CtrDrbg` | 16 B | 49,629 | ~4.1 Mbps | 8 generated blocks (two requests) in KAT suite |
+| `HmacSha256` | 64 B | 176,381 | ~1.2 Mbps | Two RFC 4231 vectors; two SHA-256 passes per MAC |
+| `HmacSha512` | 128 B | 418,429 | ~1.0 Mbps | Two RFC 4231 vectors; two SHA-512 passes per MAC |
+| `HkdfSha256` | 64 B | 528,797 | — | Extract + ExpandT1 + ExpandTN per TC; chains HMAC |
+| `Poly1305` | 16 B | 14,527 | ~5.3 Mbps | 16-byte block one-time MAC |
+| `ChaCha20` | 64 B | 25,197 | 16.4 Mbps | — |
+| `ChaCha20Poly1305` | 64 B | 63,757 | 4.8 Mbps | Includes Poly1305 auth per block |
+| `Aes256CtrDrbg` | 16 B | 42,477 | ~4.8 Mbps | 8 generated blocks (two requests) in KAT suite |
 
 ### Resource estimates
 

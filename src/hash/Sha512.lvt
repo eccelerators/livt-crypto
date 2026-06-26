@@ -383,7 +383,7 @@ component Sha512
     // -----------------------------------------------------------------------
 
     // AddWord: modular 64-bit addition in big-endian byte form.
-    fn AddWord(a0: byte, a1: byte, a2: byte, a3: byte, a4: byte, a5: byte, a6: byte, a7: byte,
+    inline fn AddWord[](a0: byte, a1: byte, a2: byte, a3: byte, a4: byte, a5: byte, a6: byte, a7: byte,
                b0: byte, b1: byte, b2: byte, b3: byte, b4: byte, b5: byte, b6: byte, b7: byte) byte[8]
     {
         var a0i: int = a0 as int; var a1i: int = a1 as int; var a2i: int = a2 as int; var a3i: int = a3 as int
@@ -409,7 +409,7 @@ component Sha512
     }
 
     // XorWord: bitwise XOR of two 64-bit words, byte by byte.
-    fn XorWord(a0: byte, a1: byte, a2: byte, a3: byte, a4: byte, a5: byte, a6: byte, a7: byte,
+    inline fn XorWord[](a0: byte, a1: byte, a2: byte, a3: byte, a4: byte, a5: byte, a6: byte, a7: byte,
                b0: byte, b1: byte, b2: byte, b3: byte, b4: byte, b5: byte, b6: byte, b7: byte) byte[8]
     {
         var x0: byte = a0 ^ b0; var x1: byte = a1 ^ b1
@@ -423,7 +423,7 @@ component Sha512
     }
 
     // AndWord: bitwise AND of two 64-bit words, byte by byte.
-    fn AndWord(a0: byte, a1: byte, a2: byte, a3: byte, a4: byte, a5: byte, a6: byte, a7: byte,
+    inline fn AndWord[](a0: byte, a1: byte, a2: byte, a3: byte, a4: byte, a5: byte, a6: byte, a7: byte,
                b0: byte, b1: byte, b2: byte, b3: byte, b4: byte, b5: byte, b6: byte, b7: byte) byte[8]
     {
         var x0: byte = a0 & b0; var x1: byte = a1 & b1
@@ -438,7 +438,7 @@ component Sha512
 
     // Rotr: rotate right a 64-bit big-endian word by n bits (0 <= n <= 63).
     @SuppressWarning("variable-divisor")
-    fn Rotr(b0: byte, b1: byte, b2: byte, b3: byte, b4: byte, b5: byte, b6: byte, b7: byte, n: int) byte[8]
+    inline fn Rotr[](b0: byte, b1: byte, b2: byte, b3: byte, b4: byte, b5: byte, b6: byte, b7: byte, n: int) byte[8]
     {
         var q: int = n / 8
         var r: int = n % 8
@@ -490,7 +490,7 @@ component Sha512
 
     // Shr: logical right shift of a 64-bit big-endian word by n bits (0 <= n <= 63).
     @SuppressWarning("variable-divisor")
-    fn Shr(b0: byte, b1: byte, b2: byte, b3: byte, b4: byte, b5: byte, b6: byte, b7: byte, n: int) byte[8]
+    inline fn Shr[](b0: byte, b1: byte, b2: byte, b3: byte, b4: byte, b5: byte, b6: byte, b7: byte, n: int) byte[8]
     {
         var q: int = n / 8
         var r: int = n % 8
@@ -538,7 +538,7 @@ component Sha512
     }
 
     // BigSigma0: ROTR_28 XOR ROTR_34 XOR ROTR_39  (used for working variable a).
-    fn BigSigma0(b0: byte, b1: byte, b2: byte, b3: byte, b4: byte, b5: byte, b6: byte, b7: byte) byte[8]
+    fn BigSigma0[](b0: byte, b1: byte, b2: byte, b3: byte, b4: byte, b5: byte, b6: byte, b7: byte) byte[8]
     {
         var r28: byte[8] = this.Rotr(b0, b1, b2, b3, b4, b5, b6, b7, 28)
         var r28b0: byte = r28[0]; var r28b1: byte = r28[1]; var r28b2: byte = r28[2]; var r28b3: byte = r28[3]
@@ -559,7 +559,7 @@ component Sha512
     }
 
     // BigSigma1: ROTR_14 XOR ROTR_18 XOR ROTR_41  (used for working variable e).
-    fn BigSigma1(b0: byte, b1: byte, b2: byte, b3: byte, b4: byte, b5: byte, b6: byte, b7: byte) byte[8]
+    fn BigSigma1[](b0: byte, b1: byte, b2: byte, b3: byte, b4: byte, b5: byte, b6: byte, b7: byte) byte[8]
     {
         var r14: byte[8] = this.Rotr(b0, b1, b2, b3, b4, b5, b6, b7, 14)
         var r14b0: byte = r14[0]; var r14b1: byte = r14[1]; var r14b2: byte = r14[2]; var r14b3: byte = r14[3]
@@ -580,7 +580,7 @@ component Sha512
     }
 
     // LilSigma0: ROTR_1 XOR ROTR_8 XOR SHR_7  (message schedule sigma0).
-    fn LilSigma0(b0: byte, b1: byte, b2: byte, b3: byte, b4: byte, b5: byte, b6: byte, b7: byte) byte[8]
+    fn LilSigma0[](b0: byte, b1: byte, b2: byte, b3: byte, b4: byte, b5: byte, b6: byte, b7: byte) byte[8]
     {
         var r1:  byte[8] = this.Rotr(b0, b1, b2, b3, b4, b5, b6, b7, 1)
         var r1b0:  byte = r1[0];  var r1b1:  byte = r1[1];  var r1b2:  byte = r1[2];  var r1b3:  byte = r1[3]
@@ -601,7 +601,7 @@ component Sha512
     }
 
     // LilSigma1: ROTR_19 XOR ROTR_61 XOR SHR_6  (message schedule sigma1).
-    fn LilSigma1(b0: byte, b1: byte, b2: byte, b3: byte, b4: byte, b5: byte, b6: byte, b7: byte) byte[8]
+    fn LilSigma1[](b0: byte, b1: byte, b2: byte, b3: byte, b4: byte, b5: byte, b6: byte, b7: byte) byte[8]
     {
         var r19: byte[8] = this.Rotr(b0, b1, b2, b3, b4, b5, b6, b7, 19)
         var r19b0: byte = r19[0]; var r19b1: byte = r19[1]; var r19b2: byte = r19[2]; var r19b3: byte = r19[3]
@@ -622,7 +622,7 @@ component Sha512
     }
 
     // Ch: (e AND f) XOR ((NOT e) AND g)
-    fn Ch(e0: byte, e1: byte, e2: byte, e3: byte, e4: byte, e5: byte, e6: byte, e7: byte,
+    fn Ch[](e0: byte, e1: byte, e2: byte, e3: byte, e4: byte, e5: byte, e6: byte, e7: byte,
           f0: byte, f1: byte, f2: byte, f3: byte, f4: byte, f5: byte, f6: byte, f7: byte,
           g0: byte, g1: byte, g2: byte, g3: byte, g4: byte, g5: byte, g6: byte, g7: byte) byte[8]
     {
@@ -650,7 +650,7 @@ component Sha512
     }
 
     // Maj: (a AND b) XOR (a AND c) XOR (b AND c)
-    fn Maj(a0: byte, a1: byte, a2: byte, a3: byte, a4: byte, a5: byte, a6: byte, a7: byte,
+    fn Maj[](a0: byte, a1: byte, a2: byte, a3: byte, a4: byte, a5: byte, a6: byte, a7: byte,
            b0: byte, b1: byte, b2: byte, b3: byte, b4: byte, b5: byte, b6: byte, b7: byte,
            c0: byte, c1: byte, c2: byte, c3: byte, c4: byte, c5: byte, c6: byte, c7: byte) byte[8]
     {

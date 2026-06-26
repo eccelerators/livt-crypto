@@ -501,7 +501,7 @@ component Cmac128
 
     // Left-shift a 128-bit value (supplied as 16 int bytes) by one bit.
     // If the original MSB (bit 127) was 1, XOR byte 15 with Rb = 0x87.
-    fn DeriveSubkey(v0: int, v1: int, v2: int, v3: int, v4: int, v5: int, v6: int, v7: int,
+    fn DeriveSubkey[](v0: int, v1: int, v2: int, v3: int, v4: int, v5: int, v6: int, v7: int,
                     v8: int, v9: int, v10: int, v11: int, v12: int, v13: int, v14: int, v15: int) byte[16]
     {
         var msb: int = v0 / 128 % 2

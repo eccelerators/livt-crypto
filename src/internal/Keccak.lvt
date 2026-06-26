@@ -459,7 +459,7 @@ component Keccak
     //   b1_new = (b1 * 2) % 256 + (b0 / 128)
     //   ...
     //   b7_new = (b7 * 2) % 256 + (b6 / 128)
-    fn RotlLE1(b0: byte, b1: byte, b2: byte, b3: byte, b4: byte, b5: byte, b6: byte, b7: byte) byte[8]
+    inline fn RotlLE1[](b0: byte, b1: byte, b2: byte, b3: byte, b4: byte, b5: byte, b6: byte, b7: byte) byte[8]
     {
         var b0i: int = b0 as int; var b1i: int = b1 as int; var b2i: int = b2 as int; var b3i: int = b3 as int
         var b4i: int = b4 as int; var b5i: int = b5 as int; var b6i: int = b6 as int; var b7i: int = b7 as int
@@ -484,7 +484,7 @@ component Keccak
     // Left rotation by n bits: equivalent to right rotation by (64-n).
     // Byte-level: rotate bytes left by q = n/8 positions; then rotate bits left by r = n%8.
     @SuppressWarning("variable-divisor")
-    fn RotlLE(b0: byte, b1: byte, b2: byte, b3: byte, b4: byte, b5: byte, b6: byte, b7: byte, n: int) byte[8]
+    inline fn RotlLE[](b0: byte, b1: byte, b2: byte, b3: byte, b4: byte, b5: byte, b6: byte, b7: byte, n: int) byte[8]
     {
         if (n == 0)
         {

@@ -276,7 +276,7 @@ component Sha256
     // -----------------------------------------------------------------------
 
     // AddWord: modular 32-bit addition in big-endian byte form.
-    fn AddWord(a0: byte, a1: byte, a2: byte, a3: byte,
+    inline fn AddWord[](a0: byte, a1: byte, a2: byte, a3: byte,
                b0: byte, b1: byte, b2: byte, b3: byte) byte[4]
     {
         var a0i: int = a0 as int; var a1i: int = a1 as int
@@ -309,7 +309,7 @@ component Sha256
     }
 
     // XorWord: bitwise XOR of two 32-bit words, byte by byte.
-    fn XorWord(a0: byte, a1: byte, a2: byte, a3: byte,
+    inline fn XorWord[](a0: byte, a1: byte, a2: byte, a3: byte,
                b0: byte, b1: byte, b2: byte, b3: byte) byte[4]
     {
         var x0: byte = a0 ^ b0
@@ -322,7 +322,7 @@ component Sha256
     }
 
     // AndWord: bitwise AND of two 32-bit words, byte by byte.
-    fn AndWord(a0: byte, a1: byte, a2: byte, a3: byte,
+    inline fn AndWord[](a0: byte, a1: byte, a2: byte, a3: byte,
                b0: byte, b1: byte, b2: byte, b3: byte) byte[4]
     {
         var x0: byte = a0 & b0
@@ -336,7 +336,7 @@ component Sha256
 
     // Rotr: rotate right a 32-bit big-endian word by n bits (0 <= n <= 31).
     @SuppressWarning("variable-divisor")
-    fn Rotr(b0: byte, b1: byte, b2: byte, b3: byte, n: int) byte[4]
+    inline fn Rotr[](b0: byte, b1: byte, b2: byte, b3: byte, n: int) byte[4]
     {
         var q: int = n / 8
         var r: int = n % 8
@@ -390,7 +390,7 @@ component Sha256
 
     // Shr: logical right shift of a 32-bit big-endian word by n bits (0 <= n <= 31).
     @SuppressWarning("variable-divisor")
-    fn Shr(b0: byte, b1: byte, b2: byte, b3: byte, n: int) byte[4]
+    inline fn Shr[](b0: byte, b1: byte, b2: byte, b3: byte, n: int) byte[4]
     {
         var q: int = n / 8
         var r: int = n % 8
@@ -442,7 +442,7 @@ component Sha256
     }
 
     // BigSigma0: ROTR_2 XOR ROTR_13 XOR ROTR_22  (used for working variable a).
-    fn BigSigma0(b0: byte, b1: byte, b2: byte, b3: byte) byte[4]
+    fn BigSigma0[](b0: byte, b1: byte, b2: byte, b3: byte) byte[4]
     {
         var r2:  byte[4] = this.Rotr(b0, b1, b2, b3, 2)
         var r2b0:  byte = r2[0];  var r2b1:  byte = r2[1];  var r2b2:  byte = r2[2];  var r2b3:  byte = r2[3]
@@ -457,7 +457,7 @@ component Sha256
     }
 
     // BigSigma1: ROTR_6 XOR ROTR_11 XOR ROTR_25  (used for working variable e).
-    fn BigSigma1(b0: byte, b1: byte, b2: byte, b3: byte) byte[4]
+    fn BigSigma1[](b0: byte, b1: byte, b2: byte, b3: byte) byte[4]
     {
         var r6:  byte[4] = this.Rotr(b0, b1, b2, b3, 6)
         var r6b0:  byte = r6[0];  var r6b1:  byte = r6[1];  var r6b2:  byte = r6[2];  var r6b3:  byte = r6[3]
@@ -472,7 +472,7 @@ component Sha256
     }
 
     // LilSigma0: ROTR_7 XOR ROTR_18 XOR SHR_3  (message schedule σ0).
-    fn LilSigma0(b0: byte, b1: byte, b2: byte, b3: byte) byte[4]
+    fn LilSigma0[](b0: byte, b1: byte, b2: byte, b3: byte) byte[4]
     {
         var r7:  byte[4] = this.Rotr(b0, b1, b2, b3, 7)
         var r7b0:  byte = r7[0];  var r7b1:  byte = r7[1];  var r7b2:  byte = r7[2];  var r7b3:  byte = r7[3]
@@ -487,7 +487,7 @@ component Sha256
     }
 
     // LilSigma1: ROTR_17 XOR ROTR_19 XOR SHR_10  (message schedule σ1).
-    fn LilSigma1(b0: byte, b1: byte, b2: byte, b3: byte) byte[4]
+    fn LilSigma1[](b0: byte, b1: byte, b2: byte, b3: byte) byte[4]
     {
         var r17: byte[4] = this.Rotr(b0, b1, b2, b3, 17)
         var r17b0: byte = r17[0]; var r17b1: byte = r17[1]; var r17b2: byte = r17[2]; var r17b3: byte = r17[3]
@@ -502,7 +502,7 @@ component Sha256
     }
 
     // Ch: (e AND f) XOR ((NOT e) AND g)
-    fn Ch(e0: byte, e1: byte, e2: byte, e3: byte,
+    fn Ch[](e0: byte, e1: byte, e2: byte, e3: byte,
           f0: byte, f1: byte, f2: byte, f3: byte,
           g0: byte, g1: byte, g2: byte, g3: byte) byte[4]
     {
@@ -531,7 +531,7 @@ component Sha256
     }
 
     // Maj: (a AND b) XOR (a AND c) XOR (b AND c)
-    fn Maj(a0: byte, a1: byte, a2: byte, a3: byte,
+    fn Maj[](a0: byte, a1: byte, a2: byte, a3: byte,
            b0: byte, b1: byte, b2: byte, b3: byte,
            c0: byte, c1: byte, c2: byte, c3: byte) byte[4]
     {
