@@ -1,6 +1,6 @@
 [project]
 name = "Livt.Crypto"
-version = "1.0.3"
+version = "1.0.4"
 path = "src"
 outdir = "out"
 
