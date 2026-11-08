@@ -11,6 +11,16 @@ derivation, and deterministic random generation. Higher-level concerns such as
 streaming adapters, padding policy, nonce generation, and key management are
 left to callers.
 
+## Package
+
+```toml
+[dependencies]
+Livt.Crypto = "1.0.5"
+```
+
+Version 1.0.5 publishes package discovery metadata, this README, a changelog,
+and the MIT license. Its component API is unchanged from 1.0.4.
+
 ## Package API Shape
 
 The supported package surface is the fixed-size component API documented here:

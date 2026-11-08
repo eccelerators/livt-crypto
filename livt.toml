@@ -1,8 +1,21 @@
 [project]
 name = "Livt.Crypto"
-version = "1.0.4"
+version = "1.0.5"
+description = "Fixed-size cryptographic components for Livt, including AES, ChaCha20, SHA, MACs, and key derivation."
+authors = ["Denis Vasilík"]
+repository = "https://github.com/eccelerators/livt-crypto"
+homepage = "https://github.com/eccelerators/livt-crypto"
+keywords = ["fpga", "cryptography", "aes", "chacha20", "hash", "aead"]
+license = "MIT"
 path = "src"
 outdir = "out"
+
+[publish]
+files = ["README.md", "CHANGELOG.md", "LICENSE"]
+
+[project.organization]
+name = "Eccelerators GmbH"
+website = "https://eccelerators.com"
 
 [tests]
 path = "tests"
